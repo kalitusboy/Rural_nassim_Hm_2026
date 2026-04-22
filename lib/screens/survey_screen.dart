@@ -2,6 +2,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart
 import '../models/beneficiary.dart';
 import '../services/database_service.dart';
 
@@ -33,10 +34,29 @@ class _SurveyScreenState extends State<SurveyScreen> {
     _status = _b.status;
   }
 
-  Future<void> _pickImage(ImageSource src) async {
-    final img = await _picker.pickImage(source: src);
-    if (img != null) setState(() => _img = File(img.path));
+
+  Future<File?> _compressImage(File file) async {
+   final dir = await getTemporaryDirectory();
+   final targetPath = '${dir.path}/${DateTime.now().millisecondsSinceEpoch}.jpg';
+   final result = await FlutterImageCompress.compressAndGetFile(
+    file.absolute.path,
+    targetPath,
+    quality: 70,        // جودة من 0 إلى 100
+    minWidth: 1024,      // عرض أدنى (اختياري)
+    minHeight: 1024,     // ارتفاع أدنى (اختياري)
+    rotate: 0,
+  );
+  return result;
+}
+
+Future<void> _pickImage(ImageSource src) async {
+  final img = await _picker.pickImage(source: src);
+  if (img != null) {
+    File original = File(img.path);
+    File? compressed = await _compressImage(original);
+    setState(() => _img = compressed ?? original);
   }
+}
 
   void _showPicker() {
     showModalBottomSheet(
