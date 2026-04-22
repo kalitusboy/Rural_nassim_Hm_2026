@@ -1,3 +1,4 @@
+
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -41,24 +42,26 @@ class _SurveyScreenState extends State<SurveyScreen> {
     showModalBottomSheet(
       context: context,
       builder: (c) => SafeArea(
-        child: Wrap(children: [
-          ListTile(
-            leading: const Icon(Icons.camera),
-            title: const Text('كاميرا'),
-            onTap: () {
-              Navigator.pop(c);
-              _pickImage(ImageSource.camera);
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.photo_library),
-            title: const Text('معرض'),
-            onTap: () {
-              Navigator.pop(c);
-              _pickImage(ImageSource.gallery);
-            },
-          ),
-        ]),
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera),
+              title: const Text('كاميرا'),
+              onTap: () {
+                Navigator.pop(c);
+                _pickImage(ImageSource.camera);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('معرض'),
+              onTap: () {
+                Navigator.pop(c);
+                _pickImage(ImageSource.gallery);
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -166,12 +169,15 @@ class _SurveyScreenState extends State<SurveyScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text('🔗 الربط بالشبكات:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                          Wrap(spacing: 16, children: [
-                            _chk('كهرباء', _e, (v) => setState(() => _e = v!)),
-                            _chk('غاز', _g, (v) => setState(() => _g = v!)),
-                            _chk('مياه', _w, (v) => setState(() => _w = v!)),
-                            _chk('تطهير', _s, (v) => setState(() => _s = v!)),
-                          ]),
+                          Wrap(
+                            spacing: 16,
+                            children: [
+                              _chk('كهرباء', _e, (v) => setState(() => _e = v!)),
+                              _chk('غاز', _g, (v) => setState(() => _g = v!)),
+                              _chk('مياه', _w, (v) => setState(() => _w = v!)),
+                              _chk('تطهير', _s, (v) => setState(() => _s = v!)),
+                            ],
+                          ),
                         ],
                       ),
                     ),
@@ -253,8 +259,13 @@ class _SurveyScreenState extends State<SurveyScreen> {
 
   Widget _chk(String label, bool val, Function(bool?) onChanged) {
     return SizedBox(
-      width: 120,
-      child: Row(children: [Checkbox(value: val, onChanged: onChanged), Text(label)]),
+      width: 100,
+      child: Row(
+        children: [
+          Checkbox(value: val, onChanged: onChanged),
+          Text(label),
+        ],
+      ),
     );
   }
 }
