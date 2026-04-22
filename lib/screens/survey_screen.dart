@@ -38,28 +38,92 @@ class _SurveyScreenState extends State<SurveyScreen> {
   }
 
   void _showPicker() {
-    showModalBottomSheet(context: context, builder: (c) => SafeArea(
-      child: Wrap(children: [
-        ListTile(leading: const Icon(Icons.camera), title: const Text('كاميرا'), onTap: () { Navigator.pop(c); _pickImage(ImageSource.camera); }),
-        ListTile(leading: const Icon(Icons.photo_library), title: const Text('معرض'), onTap: () { Navigator.pop(c); _pickImage(ImageSource.gallery); }),
-      ]),
-    ));
+    showModalBottomSheet(
+      context: context,
+      builder: (c) => SafeArea(
+        child: Wrap(children: [
+          ListTile(
+            leading: const Icon(Icons.camera),
+            title: const Text('كاميرا'),
+            onTap: () {
+              Navigator.pop(c);
+              _pickImage(ImageSource.camera);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.photo_library),
+            title: const Text('معرض'),
+            onTap: () {
+              Navigator.pop(c);
+              _pickImage(ImageSource.gallery);
+            },
+          ),
+        ]),
+      ),
+    );
   }
 
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
       final updated = _b.copyWith(
-        done: 1, electricity: _e ? 1 : 0, gas: _g ? 1 : 0, water: _w ? 1 : 0, sewage: _s ? 1 : 0,
-        status: _status, imagePath: _img?.path ?? _b.imagePath,
+        done: 1,
+        electricity: _e ? 1 : 0,
+        gas: _g ? 1 : 0,
+        water: _w ? 1 : 0,
+        sewage: _s ? 1 : 0,
+        status: _status,
+        imagePath: _img?.path ?? _b.imagePath,
         imageFileName: _img != null ? _b.generateImageFileName() : _b.imageFileName,
       );
       await _dbService.updateBeneficiary(updated);
-      if (mounted) { Navigator.pop(context, true); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ تم الحفظ'), backgroundColor: Colors.green)); }
+      if (mounted) {
+        Navigator.pop(context, true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('✅ تم الحفظ'), backgroundColor: Colors.green),
+        );
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ فشل: $e'), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('❌ فشل: $e'), backgroundColor: Colors.red),
+      );
     }
     setState(() => _saving = false);
+  }
+
+  Future<void> _delete() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('حذف المستفيد'),
+        content: Text('هل أنت متأكد من حذف "${_b.displayName}"؟ لا يمكن التراجع.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('إلغاء')),
+          TextButton(
+            onPressed: () => Navigator.pop(c, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('حذف'),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      setState(() => _saving = true);
+      try {
+        await _dbService.deleteBeneficiary(_b.id!);
+        if (mounted) {
+          Navigator.pop(context, true);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('🗑️ تم الحذف'), backgroundColor: Colors.red),
+          );
+        }
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('❌ فشل الحذف: $e'), backgroundColor: Colors.red),
+        );
+      }
+      setState(() => _saving = false);
+    }
   }
 
   @override
@@ -67,47 +131,130 @@ class _SurveyScreenState extends State<SurveyScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF1F5F9),
       appBar: AppBar(title: const Text('📝 إتمام بيانات المستفيد')),
-      body: _saving ? const Center(child: CircularProgressIndicator()) : SingleChildScrollView(
-        padding: const EdgeInsets.all(12),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Card(child: Padding(padding: const EdgeInsets.all(18), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(_b.displayName, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF0D47A1))),
-            if (_b.birthInfo.isNotEmpty) Text(_b.birthInfo, style: const TextStyle(color: Color(0xFF475569))),
-            Text('العنوان: ${_b.address} | البرنامج: ${_b.program}', style: const TextStyle(color: Color(0xFF475569))),
-          ]))),
-          const SizedBox(height: 18),
-          Card(child: Padding(padding: const EdgeInsets.all(18), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('🔗 الربط بالشبكات:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            Wrap(spacing: 16, children: [
-              _chk('كهرباء', _e, (v) => setState(() => _e = v!)),
-              _chk('غاز', _g, (v) => setState(() => _g = v!)),
-              _chk('مياه', _w, (v) => setState(() => _w = v!)),
-              _chk('تطهير', _s, (v) => setState(() => _s = v!)),
-            ]),
-          ]))),
-          const SizedBox(height: 18),
-          Card(child: Padding(padding: const EdgeInsets.all(18), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('🏗️ الحالة الفيزيائية:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            DropdownButtonFormField<String>(value: _status, items: _statuses.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(), onChanged: (v) => setState(() => _status = v!)),
-          ]))),
-          const SizedBox(height: 18),
-          Card(child: Padding(padding: const EdgeInsets.all(18), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('📷 الصورة:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            ElevatedButton.icon(onPressed: _showPicker, icon: const Icon(Icons.camera), label: const Text('التقاط صورة'), style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF475569))),
-            if (_img != null || _b.imagePath != null) Container(margin: const EdgeInsets.only(top: 16), decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 8)]), child: ClipRRect(borderRadius: BorderRadius.circular(12), child: _img != null ? Image.file(_img!) : Image.file(File(_b.imagePath!)))),
-          ]))),
-          const SizedBox(height: 24),
-          Row(children: [
-            Expanded(child: ElevatedButton(onPressed: _save, child: const Text('💾 حفظ'))),
-            const SizedBox(width: 12),
-            Expanded(child: ElevatedButton(onPressed: () => Navigator.pop(context), style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF94A3B8)), child: const Text('🔙 رجوع'))),
-          ]),
-        ]),
-      ),
+      body: _saving
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(18),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _b.displayName,
+                            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF0D47A1)),
+                          ),
+                          if (_b.birthInfo.isNotEmpty)
+                            Text(_b.birthInfo, style: const TextStyle(color: Color(0xFF475569))),
+                          Text(
+                            'العنوان: ${_b.address} | البرنامج: ${_b.program}',
+                            style: const TextStyle(color: Color(0xFF475569)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(18),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('🔗 الربط بالشبكات:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                          Wrap(spacing: 16, children: [
+                            _chk('كهرباء', _e, (v) => setState(() => _e = v!)),
+                            _chk('غاز', _g, (v) => setState(() => _g = v!)),
+                            _chk('مياه', _w, (v) => setState(() => _w = v!)),
+                            _chk('تطهير', _s, (v) => setState(() => _s = v!)),
+                          ]),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(18),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('🏗️ الحالة الفيزيائية:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                          DropdownButtonFormField<String>(
+                            value: _status,
+                            items: _statuses.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+                            onChanged: (v) => setState(() => _status = v!),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(18),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('📷 الصورة:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                          ElevatedButton.icon(
+                            onPressed: _showPicker,
+                            icon: const Icon(Icons.camera),
+                            label: const Text('التقاط صورة'),
+                            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF475569)),
+                          ),
+                          if (_img != null || _b.imagePath != null)
+                            Container(
+                              margin: const EdgeInsets.only(top: 16),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 8)],
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: _img != null ? Image.file(_img!) : Image.file(File(_b.imagePath!)),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    children: [
+                      Expanded(child: ElevatedButton(onPressed: _save, child: const Text('💾 حفظ'))),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: _delete,
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                          child: const Text('🗑️ حذف'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.pop(context),
+                          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF94A3B8)),
+                          child: const Text('🔙 رجوع'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
     );
   }
 
   Widget _chk(String label, bool val, Function(bool?) onChanged) {
-    return SizedBox(width: 120, child: Row(children: [Checkbox(value: val, onChanged: onChanged), Text(label)]));
+    return SizedBox(
+      width: 120,
+      child: Row(children: [Checkbox(value: val, onChanged: onChanged), Text(label)]),
+    );
   }
 }
