@@ -195,57 +195,71 @@ class ExcelService {
   }
 
   // ====================== تصدير الإحصائيات (جدولين، مع اختيار مسار وفتح الملف) ======================
-  Future<String?> exportStatisticsToFile({
-    required String filePath,
-    required List<String> mainHeaders,
-    required List<List<dynamic>> mainRows,
-    required List<String> detailHeaders,
-    required List<List<dynamic>> detailRows,
-    bool openAfterSave = true,
-  }) async {
-    try {
-      final excel = Excel.createExcel();
+Future<String?> exportStatisticsToFile({
+  required String filePath,
+  required List<String> mainHeaders,
+  required List<List<dynamic>> mainRows,
+  required List<String> detailHeaders,
+  required List<List<dynamic>> detailRows,
+  bool openAfterSave = true,
+}) async {
+  try {
+    final excel = Excel.createExcel();
+    
+    // الورقة الأولى: الإحصائيات العامة
+    final mainSheet = excel['الإحصائيات العامة'];
+    _writeSheetSafe(mainSheet, mainHeaders, mainRows);
+    
+    // الورقة الثانية: تفاصيل المنتهية والمشغولة
+    final detailSheet = excel['تفاصيل المنتهية والمشغولة'];
+    if (detailRows.isNotEmpty) {
+      _writeSheetSafe(detailSheet, detailHeaders, detailRows);
+    } else {
+      // إذا كانت فارغة، نضيف صف واحد نصي "لا توجد بيانات"
+      detailSheet.cell(CellIndex.indexByColumnRow(0, 0)).value = TextCellValue('لا توجد بيانات');
+    }
+    
+    // حفظ الملف
+    final file = File(filePath);
+    await file.writeAsBytes(excel.encode()!);
+    
+    if (openAfterSave) {
+      await OpenFile.open(filePath);
+    }
+    return filePath;
+  } catch (e) {
+    print('❌ خطأ في exportStatisticsToFile: $e');
+    rethrow;
+  }
+}
 
-      // الورقة الأولى: الإحصائيات العامة
-      final mainSheet = excel['الإحصائيات العامة'];
-      _writeSheet(mainSheet, mainHeaders, mainRows);
-
-      // الورقة الثانية: تفاصيل المنتهية والمشغولة
-      final detailSheet = excel['تفاصيل المنتهية والمشغولة'];
-      _writeSheet(detailSheet, detailHeaders, detailRows);
-
-      // حفظ الملف
-      final file = File(filePath);
-      await file.writeAsBytes(excel.encode()!);
+// دالة مساعدة آمنة لكتابة الجداول (تتعامل مع القيم الفارغة)
+void _writeSheetSafe(Sheet sheet, List<String> headers, List<List<dynamic>> rows) {
+  // كتابة الرأس
+  for (int col = 0; col < headers.length; col++) {
+    sheet.cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: 0))
+        .value = TextCellValue(headers[col].toString());
+  }
+  
+  // كتابة الصفوف
+  for (int i = 0; i < rows.length; i++) {
+    final row = rows[i];
+    final rowIndex = i + 1;
+    for (int col = 0; col < row.length; col++) {
+      final value = row[col];
+      final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: rowIndex));
       
-      if (openAfterSave) {
-        await OpenFile.open(filePath);
+      if (value == null) {
+        cell.value = TextCellValue('');
+      } else if (value is int) {
+        cell.value = IntCellValue(value);
+      } else if (value is double) {
+        cell.value = DoubleCellValue(value);
+      } else {
+        cell.value = TextCellValue(value.toString());
       }
-      return filePath;
-    } catch (e) {
-      print('خطأ في تصدير التقرير: $e');
-      rethrow;
     }
   }
-
-  // دالة مساعدة لكتابة أي جدول
-  void _writeSheet(Sheet sheet, List<String> headers, List<List<dynamic>> rows) {
-    for (int col = 0; col < headers.length; col++) {
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: 0))
-          .value = TextCellValue(headers[col]);
-    }
-    for (int i = 0; i < rows.length; i++) {
-      final row = rows[i];
-      final rowIndex = i + 1;
-      for (int col = 0; col < row.length; col++) {
-        final value = row[col];
-        final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: rowIndex));
-        if (value is int) {
-          cell.value = IntCellValue(value);
-        } else {
-          cell.value = TextCellValue(value.toString());
-        }
-      }
-    }
+}
   }
 }
