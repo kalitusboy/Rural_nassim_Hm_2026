@@ -169,7 +169,9 @@ class _StatsScreenState extends State<StatsScreen> {
     }
   }
   
- Future<void> _exportStatistics() async {
+// استبدل الدالة _exportStatistics بالنسخة التالية
+Future<void> _exportStatistics() async {
+  // 1. اختيار مكان حفظ الملف
   String? outputFile = await FilePicker.platform.saveFile(
     dialogTitle: "حفظ التقرير الإحصائي",
     fileName: "تقرير_إحصائي_${DateTime.now().millisecondsSinceEpoch}.xlsx",
@@ -177,6 +179,8 @@ class _StatsScreenState extends State<StatsScreen> {
   );
   if (outputFile == null) return;
 
+  // 2. عرض مؤشر التحميل
+  if (!mounted) return;
   showDialog(
     context: context,
     barrierDismissible: false,
@@ -184,52 +188,52 @@ class _StatsScreenState extends State<StatsScreen> {
   );
 
   try {
-    final tempDir = await getTemporaryDirectory();
-    final tempFile = File('${tempDir.path}/temp_report.xlsx');
-
-    await _excelService.exportStatisticsToFile(
-      filePath: tempFile.path,
+    // 3. تصدير الملف مباشرة إلى المسار المختار
+    final filePath = await _excelService.exportStatisticsToFile(
+      filePath: outputFile,
       mainHeaders: _mainHeaders,
       mainRows: _mainRows,
       detailHeaders: _detailHeaders,
       detailRows: _detailRows,
-      openAfterSave: false,
+      openAfterSave: false, // سنفتحه يدويًا بعد الإغلاق
     );
 
-    await tempFile.copy(outputFile);
-    await tempFile.delete();
+    // 4. إخفاء مؤشر التحميل
+    if (!mounted) return;
+    Navigator.pop(context);
 
-    if (mounted) Navigator.pop(context);
-    await OpenFile.open(outputFile);
-
-    if (mounted) {
+    // 5. فتح الملف وعرض رسالة نجاح
+    if (filePath != null) {
+      await OpenFile.open(filePath);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('✅ تم التصدير بنجاح إلى: ${outputFile.split('/').last}'),
+          content: Text('✅ تم تصدير التقرير بنجاح'),
           backgroundColor: Colors.green,
           duration: const Duration(seconds: 4),
           action: SnackBarAction(
-            label: 'فتح',
-            onPressed: () => OpenFile.open(outputFile),
+            label: 'فتح المجلد',
+            onPressed: () => OpenFile.open(filePath),
           ),
         ),
       );
+    } else {
+      throw Exception('لم يتم إنشاء الملف');
     }
   } catch (e, stackTrace) {
-    if (mounted) Navigator.pop(context);
-    print('❌ خطأ في تصدير التقرير: $e');
-    print('StackTrace: $stackTrace');
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('❌ فشل التصدير: ${e.toString()}'),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 5),
-        ),
-      );
-    }
+    // التعامل مع الأخطاء
+    if (!mounted) return;
+    Navigator.pop(context);
+    debugPrint('❌ خطأ في التصدير: $e');
+    debugPrint('StackTrace: $stackTrace');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('❌ فشل التصدير: ${e.toString()}'),
+        backgroundColor: Colors.red,
+        duration: const Duration(seconds: 5),
+      ),
+    );
   }
- }
+}
   
 
   @override
