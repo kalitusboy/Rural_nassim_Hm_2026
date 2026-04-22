@@ -225,12 +225,10 @@ class ExcelService {
       if (detailRows.isNotEmpty) {
         _writeSheet(detailSheet, detailHeaders, detailRows);
       } else {
-        // إذا كانت فارغة، نضيف صف واحد نصي "لا توجد بيانات"
         detailSheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 0))
             .value = TextCellValue('لا توجد بيانات');
       }
 
-      // حفظ الملف
       final file = File(filePath);
       await file.writeAsBytes(excel.encode()!);
       
@@ -244,7 +242,6 @@ class ExcelService {
     }
   }
 
-  // دالة مساعدة لكتابة أي جدول (رأس + صفوف)
   void _writeSheet(Sheet sheet, List<String> headers, List<List<dynamic>> rows) {
     // كتابة الرأس
     for (int col = 0; col < headers.length; col++) {
@@ -252,19 +249,21 @@ class ExcelService {
           .value = TextCellValue(headers[col]);
     }
 
- // في excel_service.dart داخل _writeSheet
+    // كتابة الصفوف
     for (int i = 0; i < rows.length; i++) {
-     final row = rows[i];
-     final rowIndex = i + 1;
-     for (int col = 0; col < row.length; col++) {
-      final value = row[col];
-      final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: rowIndex));
-      if (value == null) {
-       cell.value = TextCellValue(''); // قيمة فارغة بدلاً من null
-      } else if (value is int) {
-       cell.value = IntCellValue(value);
-      } else {
-       cell.value = TextCellValue(value.toString());
+      final row = rows[i];
+      final rowIndex = i + 1;
+      for (int col = 0; col < row.length; col++) {
+        final value = row[col];
+        final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: rowIndex));
+        if (value == null) {
+          cell.value = TextCellValue('');
+        } else if (value is int) {
+          cell.value = IntCellValue(value);
+        } else {
+          cell.value = TextCellValue(value.toString());
+        }
       }
     }
-   }
+  }
+}
