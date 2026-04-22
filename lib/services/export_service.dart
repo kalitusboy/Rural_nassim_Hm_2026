@@ -27,43 +27,46 @@ class ExportService {
   }
 
   Future<void> exportImagesAsZip() async {
-   try {
-    final beneficiaries = await _dbService.getCompletedBeneficiaries();
-    final withImages = beneficiaries.where((b) {
-      if (b.imagePath == null) return false;
-      return File(b.imagePath!).existsSync();
-    }).toList();
-
-    if (withImages.isEmpty) {
-      throw Exception('لا توجد صور للتصدير');
+    try {
+      final beneficiaries = await _dbService.getCompletedBeneficiaries();
+      final withImages = beneficiaries.where((b) {
+        if (b.imagePath == null) return false;
+        return File(b.imagePath!).existsSync();
+      }).toList();
+      
+      if (withImages.isEmpty) {
+        throw Exception('لا توجد صور للتصدير');
+      }
+      
+      final archive = Archive();
+      
+      for (var beneficiary in withImages) {
+        final imageFile = File(beneficiary.imagePath!);
+        final imageBytes = await imageFile.readAsBytes();
+        
+        final fileName = beneficiary.imageFileName ?? 
+            '${beneficiary.displayName}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+        
+        archive.addFile(ArchiveFile(fileName, imageBytes.length, imageBytes));
+      }
+      
+      final zipData = ZipEncoder().encode(archive);
+      if (zipData == null) {
+        throw Exception('فشل إنشاء ملف ZIP');
+      }
+      
+      final directory = await getApplicationDocumentsDirectory();
+      final zipName = 'صور_الميدان_${DateTime.now().millisecondsSinceEpoch}.zip';
+      final zipPath = '${directory.path}/$zipName';
+      
+      final zipFile = File(zipPath);
+      await zipFile.writeAsBytes(zipData);
+      
+      await Share.shareXFiles([XFile(zipPath)], text: 'صور الميدان - إحصاء 2026');
+    } catch (e) {
+      throw Exception('فشل تصدير الصور: $e');
     }
-
-    // اختيار مكان حفظ الملف
-    String? outputFile = await FilePicker.platform.saveFile(
-      dialogTitle: "حفظ ملف الصور المضغوط",
-      fileName: "صور_الميدان_${DateTime.now().millisecondsSinceEpoch}.zip",
-      allowedExtensions: ['zip'],
-    );
-    if (outputFile == null) return;
-
-    // استخدام ZipFileEncoder للإضافة المتدفقة
-    final encoder = ZipFileEncoder();
-    encoder.create(outputFile);
-
-    for (var beneficiary in withImages) {
-      final imageFile = File(beneficiary.imagePath!);
-      final fileName = beneficiary.imageFileName ?? 
-          '${beneficiary.displayName}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      await encoder.addFile(imageFile, fileName);
-    }
-
-    await encoder.close();
-
-    await Share.shareXFiles([XFile(outputFile)], text: 'صور الميدان - إحصاء 2026');
-  } catch (e) {
-    throw Exception('فشل تصدير الصور: $e');
   }
- }
 
   Future<Map<String, int>> mergeDatabases() async {
     try {
@@ -101,7 +104,6 @@ class ExportService {
               .toSet();
           
           for (var item in list) {
-            // تحويل من Map إلى Beneficiary
             final map = Map<String, dynamic>.from(item);
             final firstName = map['first_name']?.toString() ?? map['firstName']?.toString() ?? '';
             final lastName = map['last_name']?.toString() ?? map['lastName']?.toString() ?? '';
@@ -111,7 +113,6 @@ class ExportService {
             final key = '$firstName|$lastName|$birthDate|$address';
             
             if (!existingKeys.contains(key)) {
-              // إدخال المستفيد الجديد مباشرة
               await _dbService.database.then((db) async {
                 map['created_at'] = DateTime.now().millisecondsSinceEpoch;
                 map['updated_at'] = DateTime.now().millisecondsSinceEpoch;
