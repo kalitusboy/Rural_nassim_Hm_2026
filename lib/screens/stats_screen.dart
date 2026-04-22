@@ -57,7 +57,6 @@ class _StatsScreenState extends State<StatsScreen> {
   }
 
   void _calculateStats() {
-    // نفس المنطق السابق (لم يتغير)
     _programs = _data
         .map((b) => _normalizeProgram(b.program))
         .where((p) => p.isNotEmpty)
@@ -70,7 +69,7 @@ class _StatsScreenState extends State<StatsScreen> {
     _grandQuota = _data.length;
     _grandDone = _data.where((b) => b.done == 1).length;
 
-    _grandStatus.forEach((key, _) => _grandStatus[key] = 0);
+    _grandStatus.updateAll((key, value) => 0);
     _grandE = _grandG = _grandW = _grandS = 0;
 
     for (var program in _programs) {
@@ -376,82 +375,162 @@ class _StatsScreenState extends State<StatsScreen> {
     );
   }
 
+  // ====================== دوال الجداول باستخدام Table (مع colspan) ======================
   Widget _buildMainTable() {
-    return Theme(
-      data: Theme.of(context).copyWith(
-        dividerColor: Colors.transparent,
-      ),
-      child: DataTable(
-        columnSpacing: 12,
-        horizontalMargin: 12,
-        headingRowHeight: 48,
-        dataRowMinHeight: 42,
-        border: TableBorder.all(color: const Color(0xFFE2E8F0), width: 0.5),
-        headingRowColor: MaterialStateProperty.all(const Color(0xFFF1F5F9)),
-        headingTextStyle: const TextStyle(
-          fontFamily: 'Cairo',
-          fontSize: 13,
-          fontWeight: FontWeight.bold,
-          color: Color(0xFF0D47A1),
+    return Table(
+      border: TableBorder.all(color: const Color(0xFFE2E8F0), width: 0.5),
+      columnWidths: const {
+        0: IntrinsicColumnWidth(),
+        1: IntrinsicColumnWidth(),
+        2: IntrinsicColumnWidth(),
+        3: IntrinsicColumnWidth(),
+        4: IntrinsicColumnWidth(),
+        5: IntrinsicColumnWidth(),
+        6: IntrinsicColumnWidth(),
+        7: IntrinsicColumnWidth(),
+        8: IntrinsicColumnWidth(),
+        9: IntrinsicColumnWidth(),
+        10: IntrinsicColumnWidth(),
+        11: IntrinsicColumnWidth(),
+      },
+      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+      children: [
+        // الصف الأول من العناوين (مع اندماج الأعمدة)
+        TableRow(
+          decoration: const BoxDecoration(color: Color(0xFFF1F5F9)),
+          children: [
+            _buildHeaderCell('البرنامج'),
+            _buildHeaderCell('الحصة'),
+            _buildHeaderCell('منجزة'),
+            _buildHeaderCell('عدد البنايات حسب الحالة', colspan: 4),
+            _buildHeaderCell('عدد الربط بالشبكات (كل الحالات)', colspan: 4),
+          ],
         ),
-        dataTextStyle: const TextStyle(fontFamily: 'Cairo', fontSize: 13, color: Color(0xFF1E293B)),
-        columns: [
-          DataColumn(label: Text(_mainHeaders[0], textAlign: TextAlign.center)),
-          DataColumn(label: Text(_mainHeaders[1], textAlign: TextAlign.center)),
-          DataColumn(label: Text(_mainHeaders[2], textAlign: TextAlign.center)),
-          DataColumn(label: Text(_mainHeaders[3], textAlign: TextAlign.center)),
-          DataColumn(label: Text(_mainHeaders[4], textAlign: TextAlign.center)),
-          DataColumn(label: Text(_mainHeaders[5], textAlign: TextAlign.center)),
-          DataColumn(label: Text(_mainHeaders[6], textAlign: TextAlign.center)),
-          DataColumn(label: Text(_mainHeaders[7], textAlign: TextAlign.center)),
-          DataColumn(label: Text(_mainHeaders[8], textAlign: TextAlign.center)),
-          DataColumn(label: Text(_mainHeaders[9], textAlign: TextAlign.center)),
-          DataColumn(label: Text(_mainHeaders[10], textAlign: TextAlign.center)),
-          DataColumn(label: Text(_mainHeaders[11], textAlign: TextAlign.center)),
-        ],
-        rows: _mainRows.map((row) {
+        // الصف الثاني من العناوين (التفاصيل)
+        TableRow(
+          decoration: const BoxDecoration(color: Color(0xFFF1F5F9)),
+          children: [
+            _buildHeaderCell(''),
+            _buildHeaderCell(''),
+            _buildHeaderCell(''),
+            _buildHeaderCell('في طور الانجاز'),
+            _buildHeaderCell('على مستوى الاعمدة'),
+            _buildHeaderCell('منتهية غير مشغولة'),
+            _buildHeaderCell('منتهية ومشغولة'),
+            _buildHeaderCell('كهرباء'),
+            _buildHeaderCell('غاز'),
+            _buildHeaderCell('مياه'),
+            _buildHeaderCell('تطهير'),
+          ],
+        ),
+        // صفوف البيانات
+        ..._mainRows.map((row) {
           final isTotal = row[0] == 'الإجمالي';
-          return DataRow(
-            color: isTotal ? MaterialStateProperty.all(const Color(0xFFE0F2FE)) : null,
-            cells: [
-              DataCell(Text(row[0].toString(), style: TextStyle(fontWeight: isTotal ? FontWeight.bold : FontWeight.normal))),
-              DataCell(Text(row[1].toString())),
-              DataCell(Text('${row[2]} (${row[3]})')),
-              DataCell(Text(row[4].toString())),
-              DataCell(Text(row[5].toString())),
-              DataCell(Text(row[6].toString())),
-              DataCell(Text(row[7].toString())),
-              DataCell(Text(row[8].toString())),
-              DataCell(Text(row[9].toString())),
-              DataCell(Text(row[10].toString())),
-              DataCell(Text(row[11].toString())),
+          return TableRow(
+            decoration: BoxDecoration(
+              color: isTotal ? const Color(0xFFE0F2FE) : null,
+            ),
+            children: [
+              _buildDataCell(row[0].toString(), isTotal: isTotal, isHeader: true),
+              _buildDataCell(row[1].toString(), isTotal: isTotal),
+              _buildDataCell('${row[2]} (${row[3]})', isTotal: isTotal),
+              _buildDataCell(row[4].toString(), isTotal: isTotal),
+              _buildDataCell(row[5].toString(), isTotal: isTotal),
+              _buildDataCell(row[6].toString(), isTotal: isTotal),
+              _buildDataCell(row[7].toString(), isTotal: isTotal),
+              _buildDataCell(row[8].toString(), isTotal: isTotal),
+              _buildDataCell(row[9].toString(), isTotal: isTotal),
+              _buildDataCell(row[10].toString(), isTotal: isTotal),
+              _buildDataCell(row[11].toString(), isTotal: isTotal),
             ],
           );
         }).toList(),
-      ),
+      ],
     );
   }
 
   Widget _buildDetailTable() {
-    return Theme(
-      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-      child: DataTable(
-        columnSpacing: 16,
-        horizontalMargin: 12,
-        headingRowHeight: 48,
-        dataRowMinHeight: 42,
-        border: TableBorder.all(color: const Color(0xFFE2E8F0), width: 0.5),
-        headingRowColor: MaterialStateProperty.all(const Color(0xFFF1F5F9)),
-        headingTextStyle: const TextStyle(fontFamily: 'Cairo', fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0D47A1)),
-        dataTextStyle: const TextStyle(fontFamily: 'Cairo', fontSize: 13),
-        columns: _detailHeaders.map((h) => DataColumn(label: Text(h, textAlign: TextAlign.center))).toList(),
-        rows: _detailRows.map((row) {
+    return Table(
+      border: TableBorder.all(color: const Color(0xFFE2E8F0), width: 0.5),
+      columnWidths: const {
+        0: IntrinsicColumnWidth(),
+        1: IntrinsicColumnWidth(),
+        2: IntrinsicColumnWidth(),
+        3: IntrinsicColumnWidth(),
+        4: IntrinsicColumnWidth(),
+        5: IntrinsicColumnWidth(),
+      },
+      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+      children: [
+        TableRow(
+          decoration: const BoxDecoration(color: Color(0xFFF1F5F9)),
+          children: [
+            _buildHeaderCell('البرنامج'),
+            _buildHeaderCell('عدد المنتهية المشغولة'),
+            _buildHeaderCell('كهرباء'),
+            _buildHeaderCell('غاز'),
+            _buildHeaderCell('مياه'),
+            _buildHeaderCell('تطهير'),
+          ],
+        ),
+        ..._detailRows.map((row) {
           final isTotal = row[0] == 'الإجمالي';
-          return DataRow(
-            color: isTotal ? MaterialStateProperty.all(const Color(0xFFE0F2FE)) : null,
-            cells: row.map((cell) => DataCell(Text(cell.toString(), style: TextStyle(fontWeight: isTotal ? FontWeight.bold : FontWeight.normal)))).toList(),
+          return TableRow(
+            decoration: BoxDecoration(
+              color: isTotal ? const Color(0xFFE0F2FE) : null,
+            ),
+            children: [
+              _buildDataCell(row[0].toString(), isTotal: isTotal, isHeader: true),
+              _buildDataCell(row[1].toString(), isTotal: isTotal),
+              _buildDataCell(row[2].toString(), isTotal: isTotal),
+              _buildDataCell(row[3].toString(), isTotal: isTotal),
+              _buildDataCell(row[4].toString(), isTotal: isTotal),
+              _buildDataCell(row[5].toString(), isTotal: isTotal),
+            ],
           );
         }).toList(),
+      ],
+    );
+  }
+
+  // دالة مساعدة لخلية العنوان مع دعم colspan
+  Widget _buildHeaderCell(String text, {int colspan = 1}) {
+    return TableCell(
+      verticalAlignment: TableCellVerticalAlignment.middle,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+        alignment: Alignment.center,
+        child: Text(
+          text,
+          style: const TextStyle(
+            fontFamily: 'Cairo',
+            fontSize: 13,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF0D47A1),
+          ),
+          textAlign: TextAlign.center,
+        ),
+      ),
+    );
+  }
+
+  // دالة مساعدة لخلية البيانات
+  Widget _buildDataCell(String text, {bool isTotal = false, bool isHeader = false}) {
+    return TableCell(
+      verticalAlignment: TableCellVerticalAlignment.middle,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        alignment: Alignment.center,
+        child: Text(
+          text,
+          style: TextStyle(
+            fontFamily: 'Cairo',
+            fontSize: 13,
+            fontWeight: isTotal || isHeader ? FontWeight.bold : FontWeight.normal,
+            color: isTotal ? const Color(0xFF0D47A1) : Colors.black,
+          ),
+          textAlign: TextAlign.center,
+        ),
       ),
     );
   }
