@@ -170,7 +170,6 @@ class _StatsScreenState extends State<StatsScreen> {
   }
   
  Future<void> _exportStatistics() async {
-  // اختيار مسار الحفظ
   String? outputFile = await FilePicker.platform.saveFile(
     dialogTitle: "حفظ التقرير الإحصائي",
     fileName: "تقرير_إحصائي_${DateTime.now().millisecondsSinceEpoch}.xlsx",
@@ -178,7 +177,6 @@ class _StatsScreenState extends State<StatsScreen> {
   );
   if (outputFile == null) return;
 
-  // عرض مؤشر تحميل
   showDialog(
     context: context,
     barrierDismissible: false,
@@ -186,32 +184,24 @@ class _StatsScreenState extends State<StatsScreen> {
   );
 
   try {
-    // أولاً: حفظ الملف في مجلد مؤقت داخل التطبيق (لضمان وجود صلاحيات)
     final tempDir = await getTemporaryDirectory();
     final tempFile = File('${tempDir.path}/temp_report.xlsx');
-    
-    // تصدير إلى الملف المؤقت أولاً
+
     await _excelService.exportStatisticsToFile(
       filePath: tempFile.path,
       mainHeaders: _mainHeaders,
       mainRows: _mainRows,
       detailHeaders: _detailHeaders,
       detailRows: _detailRows,
-      openAfterSave: false, // لا نفتح بعد
+      openAfterSave: false,
     );
-    
-    // ثم نسخ الملف المؤقت إلى المسار الذي اختاره المستخدم
+
     await tempFile.copy(outputFile);
-    
-    // حذف الملف المؤقت
     await tempFile.delete();
-    
-    // إغلاق مؤشر التحميل
+
     if (mounted) Navigator.pop(context);
-    
-    // فتح الملف
     await OpenFile.open(outputFile);
-    
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -226,13 +216,9 @@ class _StatsScreenState extends State<StatsScreen> {
       );
     }
   } catch (e, stackTrace) {
-    // إغلاق مؤشر التحميل
     if (mounted) Navigator.pop(context);
-    
-    // طباعة الخطأ للتصحيح
     print('❌ خطأ في تصدير التقرير: $e');
     print('StackTrace: $stackTrace');
-    
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -243,7 +229,7 @@ class _StatsScreenState extends State<StatsScreen> {
       );
     }
   }
-}
+ }
   
 
   @override
