@@ -1,6 +1,7 @@
 
 import 'dart:io';
 import 'package:excel/excel.dart';
+import 'package:open_file/open_file.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/beneficiary.dart';
@@ -13,40 +14,30 @@ class ExcelService {
       type: FileType.custom,
       allowedExtensions: ['xlsx', 'xls', 'csv'],
     );
-    
     if (result == null || result.files.isEmpty) return [];
-    
     final file = result.files.first;
     List<int> bytes;
-    
     if (file.bytes != null) {
       bytes = file.bytes!;
     } else {
       bytes = await File(file.path!).readAsBytes();
     }
-    
     final excel = Excel.decodeBytes(bytes);
     final beneficiaries = <Beneficiary>[];
-    
     for (var table in excel.tables.keys) {
       final sheet = excel.tables[table];
       if (sheet == null) continue;
-      
       for (var i = 1; i < sheet.rows.length; i++) {
         final row = sheet.rows[i];
-        
         final fullName = _getCellValue(row, 0);
         final program = _getCellValue(row, 1);
         final address = _getCellValue(row, 2);
         final birthFull = _getCellValue(row, 3);
         final birthPlace = _getCellValue(row, 4);
-        
         if (fullName.isEmpty) continue;
-        
         final nameParts = _parseFullName(fullName);
         final birthDate = _extractBirthDate(birthFull);
         final finalBirthPlace = birthPlace.isNotEmpty ? birthPlace : _extractBirthPlace(birthFull);
-        
         final beneficiary = Beneficiary(
           firstName: nameParts['first'] ?? '',
           lastName: nameParts['last'] ?? '',
@@ -62,13 +53,11 @@ class ExcelService {
           sewage: 0,
           status: 'في طور الانجاز',
         );
-        
         if (beneficiary.firstName.isNotEmpty || beneficiary.lastName.isNotEmpty) {
           beneficiaries.add(beneficiary);
         }
       }
     }
-    
     return beneficiaries;
   }
 
@@ -95,37 +84,31 @@ class ExcelService {
   String _extractBirthDate(String text) {
     if (text.isEmpty) return '';
     text = text.trim();
-    
     final datePattern1 = RegExp(r'(\d{4})[/-](\d{1,2})[/-](\d{1,2})');
     final match1 = datePattern1.firstMatch(text);
     if (match1 != null) {
       return '${match1.group(1)}-${match1.group(2)?.padLeft(2, '0')}-${match1.group(3)?.padLeft(2, '0')}';
     }
-    
     final datePattern2 = RegExp(r'(\d{1,2})[/-](\d{1,2})[/-](\d{4})');
     final match2 = datePattern2.firstMatch(text);
     if (match2 != null) {
       return '${match2.group(3)}-${match2.group(2)?.padLeft(2, '0')}-${match2.group(1)?.padLeft(2, '0')}';
     }
-    
     final yearPattern = RegExp(r'عام\s*(\d{4})');
     final yearMatch = yearPattern.firstMatch(text);
     if (yearMatch != null) {
       return '${yearMatch.group(1)}-01-01';
     }
-    
     final yearOnly = RegExp(r'^(\d{4})$');
     final yearOnlyMatch = yearOnly.firstMatch(text);
     if (yearOnlyMatch != null) {
       return '${yearOnlyMatch.group(1)}-01-01';
     }
-    
     final anyDate = RegExp(r'(\d{1,2})[/-](\d{1,2})[/-](\d{4})|(\d{4})[/-](\d{1,2})[/-](\d{1,2})');
     final anyMatch = anyDate.firstMatch(text);
     if (anyMatch != null) {
       return anyMatch.group(0)!.replaceAll('/', '-');
     }
-    
     return text.length > 50 ? text.substring(0, 50) : text;
   }
 
@@ -145,144 +128,112 @@ class ExcelService {
   Future<String?> exportToExcel({
     required List<Beneficiary> beneficiaries,
     String? fileName,
+    bool openAfterSave = true,
   }) async {
-    final excel = Excel.createExcel();
-    final sheet = excel['المستفيدين'];
-    
-    final headers = [
-      'الإسم واللقب', 'البرنامج', 'العنوان', 'تاريخ الميلاد', 'مكان الميلاد',
-      'كهرباء', 'غاز', 'مياه', 'تطهير', 'الحالة',
-    ];
-    
-    for (var i = 0; i < headers.length; i++) {
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0))
-          .value = TextCellValue(headers[i]);
-    }
-    
-    for (var i = 0; i < beneficiaries.length; i++) {
-      final b = beneficiaries[i];
-      final row = i + 1;
+    try {
+      final excel = Excel.createExcel();
+      final sheet = excel['المستفيدين'];
       
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: row))
-          .value = TextCellValue(b.displayName);
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: row))
-          .value = TextCellValue(b.program ?? '');
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: row))
-          .value = TextCellValue(b.address ?? '');
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: row))
-          .value = TextCellValue(b.birthDate ?? '');
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: row))
-          .value = TextCellValue(b.birthPlace ?? '');
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: row))
-          .value = IntCellValue(b.electricity);
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: row))
-          .value = IntCellValue(b.gas);
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 7, rowIndex: row))
-          .value = IntCellValue(b.water);
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 8, rowIndex: row))
-          .value = IntCellValue(b.sewage);
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 9, rowIndex: row))
-          .value = TextCellValue(b.status);
+      final headers = [
+        'الإسم واللقب', 'البرنامج', 'العنوان', 'تاريخ الميلاد', 'مكان الميلاد',
+        'كهرباء', 'غاز', 'مياه', 'تطهير', 'الحالة',
+      ];
+      
+      for (var i = 0; i < headers.length; i++) {
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0))
+            .value = TextCellValue(headers[i]);
+      }
+      
+      for (var i = 0; i < beneficiaries.length; i++) {
+        final b = beneficiaries[i];
+        final row = i + 1;
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: row))
+            .value = TextCellValue(b.displayName);
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: row))
+            .value = TextCellValue(b.program ?? '');
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: row))
+            .value = TextCellValue(b.address ?? '');
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: row))
+            .value = TextCellValue(b.birthDate ?? '');
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: row))
+            .value = TextCellValue(b.birthPlace ?? '');
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: row))
+            .value = IntCellValue(b.electricity);
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: row))
+            .value = IntCellValue(b.gas);
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 7, rowIndex: row))
+            .value = IntCellValue(b.water);
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 8, rowIndex: row))
+            .value = IntCellValue(b.sewage);
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 9, rowIndex: row))
+            .value = TextCellValue(b.status);
+      }
+      
+      // حفظ الملف في مجلد التنزيلات أو Documents
+      Directory? saveDir;
+      if (Platform.isAndroid) {
+        saveDir = await getExternalStorageDirectory();
+      } else {
+        saveDir = await getApplicationDocumentsDirectory();
+      }
+      if (saveDir == null) saveDir = await getApplicationDocumentsDirectory();
+      
+      final name = fileName ?? 'تصدير_المستفيدين_${DateTime.now().millisecondsSinceEpoch}.xlsx';
+      final filePath = '${saveDir.path}/$name';
+      
+      final file = File(filePath);
+      await file.writeAsBytes(excel.encode()!);
+      
+      if (openAfterSave) {
+        await OpenFile.open(filePath);
+      }
+      return filePath;
+    } catch (e) {
+      print('خطأ في تصدير Excel: $e');
+      rethrow;
     }
-    
-    final directory = await getApplicationDocumentsDirectory();
-    final name = fileName ?? 'تصدير_${DateTime.now().millisecondsSinceEpoch}.xlsx';
-    final filePath = '${directory.path}/$name';
-    
-    final file = File(filePath);
-    await file.writeAsBytes(excel.encode()!);
-    
-    return filePath;
   }
 
-  // ====================== تصدير الإحصائيات (الطريقة القديمة) ======================
-  Future<String?> exportStatisticsToExcel(Map<String, dynamic> stats) async {
-    final excel = Excel.createExcel();
-    final sheet = excel['الإحصائيات'];
-    
-    final programStats = stats['programStats'] as List? ?? [];
-    
-    final headers = ['البرنامج', 'الحصة', 'منجزة', 'نسبة الإنجاز', 'في طور', 'أعمدة', 'غير مشغولة', 'مشغولة', 'كهرباء', 'غاز', 'مياه', 'تطهير'];
-    for (var i = 0; i < headers.length; i++) {
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0))
-          .value = TextCellValue(headers[i]);
-    }
-    
-    for (var i = 0; i < programStats.length; i++) {
-      final p = programStats[i] as Map;
-      final row = i + 1;
-      
-      final total = p['total'] as int? ?? 0;
-      final done = p['done'] as int? ?? 0;
-      final progress = total > 0 ? (done / total * 100).round() : 0;
-      
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: row))
-          .value = TextCellValue(p['program']?.toString() ?? '');
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: row))
-          .value = IntCellValue(total);
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: row))
-          .value = IntCellValue(done);
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: row))
-          .value = TextCellValue('$progress%');
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: row))
-          .value = IntCellValue(p['status1'] as int? ?? 0);
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: row))
-          .value = IntCellValue(p['status2'] as int? ?? 0);
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: row))
-          .value = IntCellValue(p['status3'] as int? ?? 0);
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 7, rowIndex: row))
-          .value = IntCellValue(p['status4'] as int? ?? 0);
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 8, rowIndex: row))
-          .value = IntCellValue(p['elec'] as int? ?? 0);
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 9, rowIndex: row))
-          .value = IntCellValue(p['gas'] as int? ?? 0);
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 10, rowIndex: row))
-          .value = IntCellValue(p['water'] as int? ?? 0);
-      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 11, rowIndex: row))
-          .value = IntCellValue(p['sew'] as int? ?? 0);
-    }
-    
-    final directory = await getApplicationDocumentsDirectory();
-    final filePath = '${directory.path}/تقرير_إحصائي_${DateTime.now().millisecondsSinceEpoch}.xlsx';
-    
-    final file = File(filePath);
-    await file.writeAsBytes(excel.encode()!);
-    
-    return filePath;
-  }
-
-  // ====================== تصدير الإحصائيات (طريقة جديدة مع مسار محدد وجدولين) ======================
-  Future<void> exportStatisticsToFile({
+  // ====================== تصدير الإحصائيات (جدولين، مع اختيار مسار وفتح الملف) ======================
+  Future<String?> exportStatisticsToFile({
     required String filePath,
     required List<String> mainHeaders,
     required List<List<dynamic>> mainRows,
     required List<String> detailHeaders,
     required List<List<dynamic>> detailRows,
+    bool openAfterSave = true,
   }) async {
-    final excel = Excel.createExcel();
+    try {
+      final excel = Excel.createExcel();
 
-    // الورقة الأولى: الإحصائيات العامة
-    final mainSheet = excel['الإحصائيات العامة'];
-    _writeSheet(mainSheet, mainHeaders, mainRows);
+      // الورقة الأولى: الإحصائيات العامة
+      final mainSheet = excel['الإحصائيات العامة'];
+      _writeSheet(mainSheet, mainHeaders, mainRows);
 
-    // الورقة الثانية: تفاصيل المنتهية والمشغولة
-    final detailSheet = excel['تفاصيل المنتهية والمشغولة'];
-    _writeSheet(detailSheet, detailHeaders, detailRows);
+      // الورقة الثانية: تفاصيل المنتهية والمشغولة
+      final detailSheet = excel['تفاصيل المنتهية والمشغولة'];
+      _writeSheet(detailSheet, detailHeaders, detailRows);
 
-    // حفظ الملف
-    final file = File(filePath);
-    await file.writeAsBytes(excel.encode()!);
+      // حفظ الملف
+      final file = File(filePath);
+      await file.writeAsBytes(excel.encode()!);
+      
+      if (openAfterSave) {
+        await OpenFile.open(filePath);
+      }
+      return filePath;
+    } catch (e) {
+      print('خطأ في تصدير التقرير: $e');
+      rethrow;
+    }
   }
 
-  // دالة مساعدة لكتابة أي جدول (رأس + صفوف)
+  // دالة مساعدة لكتابة أي جدول
   void _writeSheet(Sheet sheet, List<String> headers, List<List<dynamic>> rows) {
-    // كتابة الرأس
     for (int col = 0; col < headers.length; col++) {
       sheet.cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: 0))
           .value = TextCellValue(headers[col]);
     }
-
-    // كتابة الصفوف
     for (int i = 0; i < rows.length; i++) {
       final row = rows[i];
       final rowIndex = i + 1;
