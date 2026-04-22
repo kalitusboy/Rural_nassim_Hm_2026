@@ -7,7 +7,7 @@ import '../models/beneficiary.dart';
 
 class ExcelService {
   
-  // استيراد من Excel - متوافق مع شكل ملف rural_depuis_2002.xlsx
+  // ====================== الاستيراد من Excel ======================
   Future<List<Beneficiary>> importFromExcel() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
@@ -32,7 +32,6 @@ class ExcelService {
       final sheet = excel.tables[table];
       if (sheet == null) continue;
       
-      // تخطي الصف الأول (العناوين) والبدء من الصف الثاني
       for (var i = 1; i < sheet.rows.length; i++) {
         final row = sheet.rows[i];
         
@@ -44,9 +43,7 @@ class ExcelService {
         
         if (fullName.isEmpty) continue;
         
-        // تحليل الاسم الكامل
         final nameParts = _parseFullName(fullName);
-        
         final birthDate = _extractBirthDate(birthFull);
         final finalBirthPlace = birthPlace.isNotEmpty ? birthPlace : _extractBirthPlace(birthFull);
         
@@ -84,13 +81,8 @@ class ExcelService {
 
   Map<String, String> _parseFullName(String fullName) {
     fullName = fullName.trim();
-    
-    if (fullName.isEmpty) {
-      return {'first': '', 'last': ''};
-    }
-    
+    if (fullName.isEmpty) return {'first': '', 'last': ''};
     final parts = fullName.split(RegExp(r'\s+'));
-    
     if (parts.length == 1) {
       return {'first': parts[0], 'last': ''};
     } else if (parts.length == 2) {
@@ -139,7 +131,6 @@ class ExcelService {
 
   String _extractBirthPlace(String text) {
     if (text.isEmpty) return '';
-    
     String place = text;
     place = place.replaceAll(RegExp(r'\d{4}[/-]\d{1,2}[/-]\d{1,2}'), '');
     place = place.replaceAll(RegExp(r'\d{1,2}[/-]\d{1,2}[/-]\d{4}'), '');
@@ -147,10 +138,10 @@ class ExcelService {
     place = place.replaceAll(RegExp(r'\d{4}'), '');
     place = place.trim();
     place = place.replaceAll(RegExp(r'^[,\s]+|[,\s]+$'), '');
-    
     return place.isNotEmpty ? place : '';
   }
 
+  // ====================== التصدير العادي (نتائج المستفيدين) ======================
   Future<String?> exportToExcel({
     required List<Beneficiary> beneficiaries,
     String? fileName,
@@ -204,6 +195,7 @@ class ExcelService {
     return filePath;
   }
 
+  // ====================== تصدير الإحصائيات (الطريقة القديمة) ======================
   Future<String?> exportStatisticsToExcel(Map<String, dynamic> stats) async {
     final excel = Excel.createExcel();
     final sheet = excel['الإحصائيات'];
@@ -257,5 +249,52 @@ class ExcelService {
     await file.writeAsBytes(excel.encode()!);
     
     return filePath;
+  }
+
+  // ====================== تصدير الإحصائيات (طريقة جديدة مع مسار محدد وجدولين) ======================
+  Future<void> exportStatisticsToFile({
+    required String filePath,
+    required List<String> mainHeaders,
+    required List<List<dynamic>> mainRows,
+    required List<String> detailHeaders,
+    required List<List<dynamic>> detailRows,
+  }) async {
+    final excel = Excel.createExcel();
+
+    // الورقة الأولى: الإحصائيات العامة
+    final mainSheet = excel['الإحصائيات العامة'];
+    _writeSheet(mainSheet, mainHeaders, mainRows);
+
+    // الورقة الثانية: تفاصيل المنتهية والمشغولة
+    final detailSheet = excel['تفاصيل المنتهية والمشغولة'];
+    _writeSheet(detailSheet, detailHeaders, detailRows);
+
+    // حفظ الملف
+    final file = File(filePath);
+    await file.writeAsBytes(excel.encode()!);
+  }
+
+  // دالة مساعدة لكتابة أي جدول (رأس + صفوف)
+  void _writeSheet(Sheet sheet, List<String> headers, List<List<dynamic>> rows) {
+    // كتابة الرأس
+    for (int col = 0; col < headers.length; col++) {
+      sheet.cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: 0))
+          .value = TextCellValue(headers[col]);
+    }
+
+    // كتابة الصفوف
+    for (int i = 0; i < rows.length; i++) {
+      final row = rows[i];
+      final rowIndex = i + 1;
+      for (int col = 0; col < row.length; col++) {
+        final value = row[col];
+        final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: rowIndex));
+        if (value is int) {
+          cell.value = IntCellValue(value);
+        } else {
+          cell.value = TextCellValue(value.toString());
+        }
+      }
+    }
   }
 }
