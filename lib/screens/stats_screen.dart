@@ -1,9 +1,12 @@
 
+import 'dart:io'; // <-- أضف هذا
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:path_provider/path_provider.dart'; // <-- أضف هذا
+import 'package:open_file/open_file.dart';
+// تأكد من صحة المسارات التالية في مشروعك
 import '../models/beneficiary.dart';
 import '../services/excel_service.dart';
-import 'package:open_file/open_file.dart';
 import '../services/database_service.dart';
 
 class StatsScreen extends StatefulWidget {
@@ -165,44 +168,83 @@ class _StatsScreenState extends State<StatsScreen> {
       _detailRows.add(['الإجمالي', totalOcc, totalOccE, totalOccG, totalOccW, totalOccS]);
     }
   }
-
-  Future<void> _exportStatistics() async {
-   String? outputFile = await FilePicker.platform.saveFile(
+  
+ Future<void> _exportStatistics() async {
+  // اختيار مسار الحفظ
+  String? outputFile = await FilePicker.platform.saveFile(
     dialogTitle: "حفظ التقرير الإحصائي",
     fileName: "تقرير_إحصائي_${DateTime.now().millisecondsSinceEpoch}.xlsx",
     allowedExtensions: ['xlsx'],
   );
   if (outputFile == null) return;
+
+  // عرض مؤشر تحميل
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => const Center(child: CircularProgressIndicator()),
+  );
+
   try {
-    final savedPath = await _excelService.exportStatisticsToFile(
-      filePath: outputFile,
+    // أولاً: حفظ الملف في مجلد مؤقت داخل التطبيق (لضمان وجود صلاحيات)
+    final tempDir = await getTemporaryDirectory();
+    final tempFile = File('${tempDir.path}/temp_report.xlsx');
+    
+    // تصدير إلى الملف المؤقت أولاً
+    await _excelService.exportStatisticsToFile(
+      filePath: tempFile.path,
       mainHeaders: _mainHeaders,
       mainRows: _mainRows,
       detailHeaders: _detailHeaders,
       detailRows: _detailRows,
-      openAfterSave: true, // سيفتح الملف تلقائياً
+      openAfterSave: false, // لا نفتح بعد
     );
-    if (mounted && savedPath != null) {
+    
+    // ثم نسخ الملف المؤقت إلى المسار الذي اختاره المستخدم
+    await tempFile.copy(outputFile);
+    
+    // حذف الملف المؤقت
+    await tempFile.delete();
+    
+    // إغلاق مؤشر التحميل
+    if (mounted) Navigator.pop(context);
+    
+    // فتح الملف
+    await OpenFile.open(outputFile);
+    
+    if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('✅ تم التصدير بنجاح إلى: ${savedPath.split('/').last}'),
+          content: Text('✅ تم التصدير بنجاح إلى: ${outputFile.split('/').last}'),
           backgroundColor: Colors.green,
           duration: const Duration(seconds: 4),
           action: SnackBarAction(
             label: 'فتح',
-            onPressed: () => OpenFile.open(savedPath),
+            onPressed: () => OpenFile.open(outputFile),
           ),
         ),
       );
     }
-  } catch (e) {
+  } catch (e, stackTrace) {
+    // إغلاق مؤشر التحميل
+    if (mounted) Navigator.pop(context);
+    
+    // طباعة الخطأ للتصحيح
+    print('❌ خطأ في تصدير التقرير: $e');
+    print('StackTrace: $stackTrace');
+    
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('❌ فشل التصدير: $e'), backgroundColor: Colors.red),
+        SnackBar(
+          content: Text('❌ فشل التصدير: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 5),
+        ),
       );
     }
   }
 }
+  
 
   @override
   Widget build(BuildContext context) {
