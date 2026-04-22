@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../models/beneficiary.dart';
 import '../services/excel_service.dart';
+import 'package:open_file/open_file.dart';
 import '../services/database_service.dart';
 
 class StatsScreen extends StatefulWidget {
@@ -166,33 +167,42 @@ class _StatsScreenState extends State<StatsScreen> {
   }
 
   Future<void> _exportStatistics() async {
-    String? outputFile = await FilePicker.platform.saveFile(
-      dialogTitle: "حفظ التقرير الإحصائي",
-      fileName: "تقرير_إحصائي_${DateTime.now().millisecondsSinceEpoch}.xlsx",
-      allowedExtensions: ['xlsx'],
+   String? outputFile = await FilePicker.platform.saveFile(
+    dialogTitle: "حفظ التقرير الإحصائي",
+    fileName: "تقرير_إحصائي_${DateTime.now().millisecondsSinceEpoch}.xlsx",
+    allowedExtensions: ['xlsx'],
+  );
+  if (outputFile == null) return;
+  try {
+    final savedPath = await _excelService.exportStatisticsToFile(
+      filePath: outputFile,
+      mainHeaders: _mainHeaders,
+      mainRows: _mainRows,
+      detailHeaders: _detailHeaders,
+      detailRows: _detailRows,
+      openAfterSave: true, // سيفتح الملف تلقائياً
     );
-    if (outputFile == null) return;
-    try {
-      await _excelService.exportStatisticsToFile(
-        filePath: outputFile,
-        mainHeaders: _mainHeaders,
-        mainRows: _mainRows,
-        detailHeaders: _detailHeaders,
-        detailRows: _detailRows,
+    if (mounted && savedPath != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('✅ تم التصدير بنجاح إلى: ${savedPath.split('/').last}'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 4),
+          action: SnackBarAction(
+            label: 'فتح',
+            onPressed: () => OpenFile.open(savedPath),
+          ),
+        ),
       );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('✅ تم التصدير بنجاح'), backgroundColor: Colors.green),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('❌ فشل التصدير: $e'), backgroundColor: Colors.red),
-        );
-      }
+    }
+  } catch (e) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('❌ فشل التصدير: $e'), backgroundColor: Colors.red),
+      );
     }
   }
+}
 
   @override
   Widget build(BuildContext context) {
