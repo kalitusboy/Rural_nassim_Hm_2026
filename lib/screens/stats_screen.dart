@@ -59,7 +59,6 @@ class _StatsScreenState extends State<StatsScreen> {
   }
 
   void _calculateStats() {
-    // استخراج البرامج الفريدة
     _programs = _data
         .map((b) => _normalizeProgram(b.program))
         .where((p) => p.isNotEmpty)
@@ -86,7 +85,6 @@ class _StatsScreenState extends State<StatsScreen> {
       final done = programDone.length;
       final progress = quota > 0 ? (done / quota * 100).round() : 0;
       
-      // الحالات
       final statusCounts = {
         "في طور الانجاز": programDone.where((b) => _safeText(b.status) == "في طور الانجاز").length,
         "على مستوى الاعمدة": programDone.where((b) => _safeText(b.status) == "على مستوى الاعمدة").length,
@@ -94,20 +92,17 @@ class _StatsScreenState extends State<StatsScreen> {
         "منتهية ومشغولة": programDone.where((b) => _safeText(b.status) == "منتهية ومشغولة").length,
       };
       
-      // الربط بالشبكات (كل المنجز)
       final eSum = programDone.fold(0, (sum, b) => sum + b.electricity);
       final gSum = programDone.fold(0, (sum, b) => sum + b.gas);
       final wSum = programDone.fold(0, (sum, b) => sum + b.water);
       final sSum = programDone.fold(0, (sum, b) => sum + b.sewage);
       
-      // تحديث الإجماليات
       statusCounts.forEach((k, v) => _grandStatus[k] = (_grandStatus[k] ?? 0) + v);
       _grandE += eSum;
       _grandG += gSum;
       _grandW += wSum;
       _grandS += sSum;
       
-      // صف الجدول الرئيسي
       _mainRows.add([
         program,
         quota,
@@ -123,7 +118,6 @@ class _StatsScreenState extends State<StatsScreen> {
         sSum,
       ]);
       
-      // الجدول التفصيلي (فقط للمنتهية المشغولة)
       final occupied = programDone.where((b) => _safeText(b.status) == "منتهية ومشغولة").toList();
       if (occupied.isNotEmpty) {
         final occE = occupied.fold(0, (sum, b) => sum + b.electricity);
@@ -135,7 +129,6 @@ class _StatsScreenState extends State<StatsScreen> {
       }
     }
     
-    // صف الإجمالي للجدول الرئيسي
     final totalProgress = _grandQuota > 0 ? (_grandDone / _grandQuota * 100).round() : 0;
     _mainRows.add([
       'الإجمالي',
@@ -152,7 +145,6 @@ class _StatsScreenState extends State<StatsScreen> {
       _grandS,
     ]);
     
-    // إجمالي الجدول التفصيلي
     final totalOcc = _grandStatus["منتهية ومشغولة"] ?? 0;
     if (totalOcc > 0) {
       final allDone = _data.where((b) => b.done == 1).toList();
@@ -232,7 +224,7 @@ class _StatsScreenState extends State<StatsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // الملخص العام - بنفس تصميم HTML
+            // الملخص العام
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
@@ -288,7 +280,7 @@ class _StatsScreenState extends State<StatsScreen> {
               ),
             ),
             
-            // الجدول الرئيسي - الإحصائيات العامة
+            // الجدول الرئيسي
             const Text(
               '📋 الإحصائيات العامة',
               style: TextStyle(
@@ -321,7 +313,7 @@ class _StatsScreenState extends State<StatsScreen> {
             
             const SizedBox(height: 30),
             
-            // الجدول التفصيلي - تحليل الربط بالشبكات
+            // الجدول التفصيلي
             if (_detailRows.isNotEmpty) ...[
               const Text(
                 '🔌 تحليل الربط بالشبكات للمنازل المنتهية والمشغولة',
@@ -356,7 +348,7 @@ class _StatsScreenState extends State<StatsScreen> {
             
             const SizedBox(height: 24),
             
-            // أزرار التصدير والعودة
+            // أزرار
             Row(
               children: [
                 Expanded(
@@ -430,25 +422,34 @@ class _StatsScreenState extends State<StatsScreen> {
       },
       defaultVerticalAlignment: TableCellVerticalAlignment.middle,
       children: [
-        // صف العناوين - الصف الأول
+        // الصف الأول من العناوين
         TableRow(
           decoration: const BoxDecoration(
             color: Color(0xFFF8FAFC),
           ),
           children: [
-            _buildHeaderCell('البرنامج', rowSpan: 2),
-            _buildHeaderCell('الحصة', rowSpan: 2),
-            _buildHeaderCell('منجزة', rowSpan: 2),
-            _buildHeaderCell('عدد البنايات حسب الحالة', colSpan: 4),
-            _buildHeaderCell('عدد الربط بالشبكات (كل الحالات)', colSpan: 4),
+            _buildHeaderCell('البرنامج'),
+            _buildHeaderCell('الحصة'),
+            _buildHeaderCell('منجزة'),
+            _buildHeaderCell('عدد البنايات حسب الحالة'),
+            _buildHeaderCell(''),
+            _buildHeaderCell(''),
+            _buildHeaderCell(''),
+            _buildHeaderCell('عدد الربط بالشبكات (كل الحالات)'),
+            _buildHeaderCell(''),
+            _buildHeaderCell(''),
+            _buildHeaderCell(''),
           ],
         ),
-        // صف العناوين - الصف الثاني
+        // الصف الثاني من العناوين
         TableRow(
           decoration: const BoxDecoration(
             color: Color(0xFFF8FAFC),
           ),
           children: [
+            _buildHeaderCell(''),
+            _buildHeaderCell(''),
+            _buildHeaderCell(''),
             _buildHeaderCell('في طور الانجاز'),
             _buildHeaderCell('على مستوى الاعمدة'),
             _buildHeaderCell('منتهية غير مشغولة'),
@@ -464,9 +465,7 @@ class _StatsScreenState extends State<StatsScreen> {
           final isTotal = row[0] == 'الإجمالي';
           return TableRow(
             decoration: isTotal
-                ? const BoxDecoration(
-                    color: Color(0xFFE0F2FE),
-                  )
+                ? const BoxDecoration(color: Color(0xFFE0F2FE))
                 : null,
             children: [
               _buildDataCell(row[0].toString(), isHeader: true, isTotal: isTotal),
@@ -503,11 +502,8 @@ class _StatsScreenState extends State<StatsScreen> {
       },
       defaultVerticalAlignment: TableCellVerticalAlignment.middle,
       children: [
-        // صف العناوين
         TableRow(
-          decoration: const BoxDecoration(
-            color: Color(0xFFF8FAFC),
-          ),
+          decoration: const BoxDecoration(color: Color(0xFFF8FAFC)),
           children: [
             _buildHeaderCell('البرنامج'),
             _buildHeaderCell('عدد المنتهية المشغولة'),
@@ -517,14 +513,11 @@ class _StatsScreenState extends State<StatsScreen> {
             _buildHeaderCell('تطهير'),
           ],
         ),
-        // صفوف البيانات
         ..._detailRows.map((row) {
           final isTotal = row[0] == 'الإجمالي';
           return TableRow(
             decoration: isTotal
-                ? const BoxDecoration(
-                    color: Color(0xFFE0F2FE),
-                  )
+                ? const BoxDecoration(color: Color(0xFFE0F2FE))
                 : null,
             children: [
               _buildDataCell(row[0].toString(), isHeader: true, isTotal: isTotal),
@@ -540,10 +533,8 @@ class _StatsScreenState extends State<StatsScreen> {
     );
   }
 
-  Widget _buildHeaderCell(String text, {int rowSpan = 1, int colSpan = 1}) {
+  Widget _buildHeaderCell(String text) {
     return TableCell(
-      rowSpan: rowSpan,
-      columnSpan: colSpan,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
         alignment: Alignment.center,
