@@ -6,7 +6,7 @@ import '../services/excel_service.dart';
 import '../services/database_service.dart';
 
 class StatsScreen extends StatefulWidget {
-  final List<Beneficiary>? allBeneficiaries; // اختياري الآن للتوافق
+  final List<Beneficiary>? allBeneficiaries;
 
   const StatsScreen({super.key, this.allBeneficiaries});
 
@@ -56,7 +56,7 @@ class _StatsScreenState extends State<StatsScreen> {
     if (widget.allBeneficiaries != null && widget.allBeneficiaries!.isNotEmpty) {
       _data = widget.allBeneficiaries!;
     } else {
-      _data = await _dbService.getAllBeneficiaries(); // جلب من قاعدة البيانات
+      _data = await _dbService.getAllBeneficiaries();
     }
     _calculateStats();
     setState(() => _isLoading = false);
@@ -398,6 +398,16 @@ class _StatsScreenState extends State<StatsScreen> {
 
   // ====================== دوال الجداول باستخدام Table (مع colspan) ======================
   Widget _buildMainTable() {
+    if (_mainRows.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32.0),
+          child: Text('لا توجد بيانات إحصائية متاحة',
+              style: TextStyle(fontFamily: 'Cairo', fontSize: 16, color: Color(0xFF475569))),
+        ),
+      );
+    }
+
     return Table(
       border: TableBorder.all(color: const Color(0xFFE2E8F0), width: 0.5),
       columnWidths: const {
@@ -416,32 +426,32 @@ class _StatsScreenState extends State<StatsScreen> {
       },
       defaultVerticalAlignment: TableCellVerticalAlignment.middle,
       children: [
-        // الصف الأول من العناوين (مع اندماج الأعمدة)
+        // الصف الأول (عناوين رئيسية مع اندماج)
         TableRow(
           decoration: const BoxDecoration(color: Color(0xFFF1F5F9)),
           children: [
-            _buildHeaderCell('البرنامج'),
-            _buildHeaderCell('الحصة'),
-            _buildHeaderCell('منجزة'),
+            _buildHeaderCell('البرنامج', colspan: 1),
+            _buildHeaderCell('الحصة', colspan: 1),
+            _buildHeaderCell('منجزة', colspan: 1),
             _buildHeaderCell('عدد البنايات حسب الحالة', colspan: 4),
             _buildHeaderCell('عدد الربط بالشبكات (كل الحالات)', colspan: 4),
           ],
         ),
-        // الصف الثاني من العناوين (التفاصيل)
+        // الصف الثاني (عناوين فرعية)
         TableRow(
           decoration: const BoxDecoration(color: Color(0xFFF1F5F9)),
           children: [
-            _buildHeaderCell(''),
-            _buildHeaderCell(''),
-            _buildHeaderCell(''),
-            _buildHeaderCell('في طور الانجاز'),
-            _buildHeaderCell('على مستوى الاعمدة'),
-            _buildHeaderCell('منتهية غير مشغولة'),
-            _buildHeaderCell('منتهية ومشغولة'),
-            _buildHeaderCell('كهرباء'),
-            _buildHeaderCell('غاز'),
-            _buildHeaderCell('مياه'),
-            _buildHeaderCell('تطهير'),
+            _buildHeaderCell('', colspan: 1),
+            _buildHeaderCell('', colspan: 1),
+            _buildHeaderCell('', colspan: 1),
+            _buildHeaderCell('في طور الانجاز', colspan: 1),
+            _buildHeaderCell('على مستوى الاعمدة', colspan: 1),
+            _buildHeaderCell('منتهية غير مشغولة', colspan: 1),
+            _buildHeaderCell('منتهية ومشغولة', colspan: 1),
+            _buildHeaderCell('كهرباء', colspan: 1),
+            _buildHeaderCell('غاز', colspan: 1),
+            _buildHeaderCell('مياه', colspan: 1),
+            _buildHeaderCell('تطهير', colspan: 1),
           ],
         ),
         // صفوف البيانات
@@ -471,6 +481,9 @@ class _StatsScreenState extends State<StatsScreen> {
   }
 
   Widget _buildDetailTable() {
+    if (_detailRows.isEmpty) {
+      return const SizedBox.shrink();
+    }
     return Table(
       border: TableBorder.all(color: const Color(0xFFE2E8F0), width: 0.5),
       columnWidths: const {
@@ -486,12 +499,12 @@ class _StatsScreenState extends State<StatsScreen> {
         TableRow(
           decoration: const BoxDecoration(color: Color(0xFFF1F5F9)),
           children: [
-            _buildHeaderCell('البرنامج'),
-            _buildHeaderCell('عدد المنتهية المشغولة'),
-            _buildHeaderCell('كهرباء'),
-            _buildHeaderCell('غاز'),
-            _buildHeaderCell('مياه'),
-            _buildHeaderCell('تطهير'),
+            _buildHeaderCell('البرنامج', colspan: 1),
+            _buildHeaderCell('عدد المنتهية المشغولة', colspan: 1),
+            _buildHeaderCell('كهرباء', colspan: 1),
+            _buildHeaderCell('غاز', colspan: 1),
+            _buildHeaderCell('مياه', colspan: 1),
+            _buildHeaderCell('تطهير', colspan: 1),
           ],
         ),
         ..._detailRows.map((row) {
@@ -517,6 +530,7 @@ class _StatsScreenState extends State<StatsScreen> {
   Widget _buildHeaderCell(String text, {int colspan = 1}) {
     return TableCell(
       verticalAlignment: TableCellVerticalAlignment.middle,
+      colSpan: colspan,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
         alignment: Alignment.center,
@@ -534,7 +548,7 @@ class _StatsScreenState extends State<StatsScreen> {
     );
   }
 
-   Widget _buildDataCell(String text, {bool isTotal = false, bool isHeader = false}) {
+  Widget _buildDataCell(String text, {bool isTotal = false, bool isHeader = false}) {
     return TableCell(
       verticalAlignment: TableCellVerticalAlignment.middle,
       child: Container(
