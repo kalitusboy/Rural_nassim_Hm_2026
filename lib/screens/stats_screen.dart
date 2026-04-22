@@ -3,11 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../models/beneficiary.dart';
 import '../services/excel_service.dart';
+import '../services/database_service.dart';
 
 class StatsScreen extends StatefulWidget {
-  final List<Beneficiary> allBeneficiaries;
+  final List<Beneficiary>? allBeneficiaries; // اختياري الآن للتوافق
 
-  const StatsScreen({super.key, required this.allBeneficiaries});
+  const StatsScreen({super.key, this.allBeneficiaries});
 
   @override
   State<StatsScreen> createState() => _StatsScreenState();
@@ -15,8 +16,11 @@ class StatsScreen extends StatefulWidget {
 
 class _StatsScreenState extends State<StatsScreen> {
   final ExcelService _excelService = ExcelService();
+  final DatabaseService _dbService = DatabaseService();
 
-  late List<Beneficiary> _data;
+  List<Beneficiary> _data = [];
+  bool _isLoading = true;
+
   late List<String> _programs;
 
   final List<List<dynamic>> _mainRows = [];
@@ -44,8 +48,18 @@ class _StatsScreenState extends State<StatsScreen> {
   @override
   void initState() {
     super.initState();
-    _data = widget.allBeneficiaries;
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    setState(() => _isLoading = true);
+    if (widget.allBeneficiaries != null && widget.allBeneficiaries!.isNotEmpty) {
+      _data = widget.allBeneficiaries!;
+    } else {
+      _data = await _dbService.getAllBeneficiaries(); // جلب من قاعدة البيانات
+    }
     _calculateStats();
+    setState(() => _isLoading = false);
   }
 
   String _normalizeProgram(String? program) {
@@ -170,6 +184,13 @@ class _StatsScreenState extends State<StatsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        backgroundColor: Color(0xFFF8FAFC),
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     final totalProgress = _grandQuota > 0 ? (_grandDone / _grandQuota * 100).round() : 0;
 
     return Scaffold(
@@ -493,7 +514,6 @@ class _StatsScreenState extends State<StatsScreen> {
     );
   }
 
-  // دالة مساعدة لخلية العنوان مع دعم colspan
   Widget _buildHeaderCell(String text, {int colspan = 1}) {
     return TableCell(
       verticalAlignment: TableCellVerticalAlignment.middle,
@@ -514,8 +534,7 @@ class _StatsScreenState extends State<StatsScreen> {
     );
   }
 
-  // دالة مساعدة لخلية البيانات
-  Widget _buildDataCell(String text, {bool isTotal = false, bool isHeader = false}) {
+   Widget _buildDataCell(String text, {bool isTotal = false, bool isHeader = false}) {
     return TableCell(
       verticalAlignment: TableCellVerticalAlignment.middle,
       child: Container(
