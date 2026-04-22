@@ -1,0 +1,12 @@
+.dart_tool/
+.flutter-plugins
+.packages
+.pub/
+/build/
+pubspec.lock
+*.iml
+.idea/
+.gradle/
+local.properties
+*.db
+*.jks
