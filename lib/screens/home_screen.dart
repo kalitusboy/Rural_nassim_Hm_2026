@@ -114,15 +114,18 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   Future<void> _mergeDatabases() async {
-    setState(() => _loading = true);
-    try {
-      final result = await _exportService.mergeDatabases();
-      _showSnack('✅ تم الدمج (${result['imported']} جديد، ${result['duplicates']} مكرر)', true);
-      await _loadData();
-    } catch (e) {
-      _showSnack('❌ فشل الدمج: $e', false);
-    }
-    setState(() => _loading = false);
+   setState(() => _loading = true);
+   try {
+     final result = await _exportService.mergeDatabases();
+     _showSnack(
+      '✅ الدمج: ${result['imported']} جديد · ${result['updated']} محدث · ${result['skipped']} مكتمل',
+      true,
+     );
+     await _loadData();
+   } catch (e) {
+    _showSnack('❌ فشل الدمج: $e', false);
+   }
+   setState(() => _loading = false);
   }
 
   Future<void> _exportResults() async {
