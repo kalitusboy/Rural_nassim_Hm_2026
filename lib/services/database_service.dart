@@ -211,4 +211,31 @@ class DatabaseService {
     }
     return {'imported': imported, 'duplicates': duplicates};
   }
+  // البحث عن مستفيد بالمفتاح الفريد (الاسم + اللقب + تاريخ الميلاد + العنوان)
+  Future<Beneficiary?> findBeneficiaryByKey(String firstName, String lastName, String? birthDate, String? address) async {
+   final db = await database;
+   final List<Map<String, dynamic>> maps = await db.query(
+     _tableName,
+     where: 'first_name = ? AND last_name = ? AND birth_date = ? AND address = ?',
+     whereArgs: [firstName, lastName, birthDate ?? '', address ?? ''],
+   );
+   if (maps.isEmpty) return null;
+   return Beneficiary.fromMap(maps.first);
+  }
+
+ // تحديث مستفيد من خريطة بيانات (مع الحفاظ على بعض الحقول)
+  Future<void> updateBeneficiaryFromMap(int id, Map<String, dynamic> newData) async {
+   final db = await database;
+  
+  // لا نغير created_at الأصلي
+    newData.remove('created_at');
+    newData['updated_at'] = DateTime.now().millisecondsSinceEpoch;
+  
+    await db.update(
+     _tableName,
+     newData,
+     where: 'id = ?',
+     whereArgs: [id],
+    );
+  }
 }
