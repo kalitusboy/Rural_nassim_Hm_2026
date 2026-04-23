@@ -187,7 +187,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     return Scaffold(
       backgroundColor: const Color(0xFFF1F5F9),
       appBar: AppBar(
-        title: const Text('📊 نظام الإحصاء 2026'),
+        title: const Text('إحصاء السكن الريفي 2026 | نسيم - الحوضان', style: TextStyle(fontSize: 15)),
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
