@@ -158,7 +158,7 @@ class _StatsScreenState extends State<StatsScreen> {
 
     // إجمالي الجدول التفصيلي
     final totalOcc = _grandStatus["منتهية ومشغولة"] ?? 0;
-    if (totalOcc > 0) {
+     if (totalOcc > 0) {
       final allDone = _data.where((b) => b.done == 1).toList();
       final occupiedAll = allDone.where((b) => _safeText(b.status) == "منتهية ومشغولة").toList();
       final totalOccE = occupiedAll.fold(0, (sum, b) => sum + b.electricity);
@@ -169,72 +169,61 @@ class _StatsScreenState extends State<StatsScreen> {
     }
   }
   
-// استبدل الدالة _exportStatistics بالنسخة التالية
+ // استبدل الدالة _exportStatistics بالنسخة التالية
 Future<void> _exportStatistics() async {
-  // 1. اختيار مكان حفظ الملف
-  String? outputFile = await FilePicker.platform.saveFile(
-    dialogTitle: "حفظ التقرير الإحصائي",
-    fileName: "تقرير_إحصائي_${DateTime.now().millisecondsSinceEpoch}.xlsx",
-    allowedExtensions: ['xlsx'],
-  );
-  if (outputFile == null) return;
-
-  // 2. عرض مؤشر التحميل
-  if (!mounted) return;
   showDialog(
     context: context,
     barrierDismissible: false,
-    builder: (context) => const Center(child: CircularProgressIndicator()),
+    builder: (_) => const Center(child: CircularProgressIndicator()),
   );
 
   try {
-    // 3. تصدير الملف مباشرة إلى المسار المختار
-    final filePath = await _excelService.exportStatisticsToFile(
-      filePath: outputFile,
+    final fileName =
+        'تقرير_إحصائي_${DateTime.now().millisecondsSinceEpoch}.xlsx';
+
+    final directory = await getApplicationDocumentsDirectory();
+    final filePath = '${directory.path}/$fileName';
+
+    final exportedPath = await _excelService.exportStatisticsToFile(
+      filePath: filePath,
       mainHeaders: _mainHeaders,
       mainRows: _mainRows,
       detailHeaders: _detailHeaders,
       detailRows: _detailRows,
-      openAfterSave: false, // سنفتحه يدويًا بعد الإغلاق
+      openAfterSave: false,
     );
 
-    // 4. إخفاء مؤشر التحميل
     if (!mounted) return;
-    Navigator.pop(context);
 
-    // 5. فتح الملف وعرض رسالة نجاح
-    if (filePath != null) {
-      await OpenFile.open(filePath);
+    Navigator.of(context, rootNavigator: true).pop();
+
+    if (exportedPath != null) {
+      await OpenFile.open(exportedPath);
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('✅ تم تصدير التقرير بنجاح'),
+          content: Text('✅ تم تصدير التقرير: $fileName'),
           backgroundColor: Colors.green,
-          duration: const Duration(seconds: 4),
-          action: SnackBarAction(
-            label: 'فتح المجلد',
-            onPressed: () => OpenFile.open(filePath),
-          ),
         ),
       );
     } else {
-      throw Exception('لم يتم إنشاء الملف');
+      throw Exception('فشل إنشاء الملف');
     }
-  } catch (e, stackTrace) {
-    // التعامل مع الأخطاء
+  } catch (e) {
     if (!mounted) return;
-    Navigator.pop(context);
-    debugPrint('❌ خطأ في التصدير: $e');
-    debugPrint('StackTrace: $stackTrace');
+
+    Navigator.of(context, rootNavigator: true).pop();
+
+    debugPrint('Export error: $e');
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('❌ فشل التصدير: ${e.toString()}'),
+        content: Text('❌ خطأ: $e'),
         backgroundColor: Colors.red,
-        duration: const Duration(seconds: 5),
       ),
     );
   }
 }
-  
 
   @override
   Widget build(BuildContext context) {
