@@ -185,31 +185,31 @@ class _AdminMergeScreenState extends State<AdminMergeScreen> {
       }
       _addLog('📸 تم نقل $updatedCount صورة، لم يتم العثور على $notFoundCount صورة');
 
-      // 7. حفظ JSON النهائي داخل مجلد التطبيق (آمن)
-      final String outputFileName = 'merged_database_${DateTime.now().millisecondsSinceEpoch}.json';
-      final outputFile = File('${appDir.path}/$outputFileName');
+      // 7. إنشاء ملف JSON النهائي في مجلد Download
+      final downloadDir = Directory('/storage/emulated/0/Download');
+      if (!await downloadDir.exists()) {
+        await downloadDir.create(recursive: true);
+      }
+      final String fileName = 'merged_database_${DateTime.now().millisecondsSinceEpoch}.json';
+      final outputFile = File('${downloadDir.path}/$fileName');
       final outputData = {'beneficiaries': mergedBeneficiaries.values.toList()};
       await outputFile.writeAsString(jsonEncode(outputData));
-      _addLog('💾 تم حفظ الملف: ${outputFile.path}');
+      _addLog('💾 تم حفظ الملف النهائي في: ${outputFile.path}');
 
       // 8. تنظيف المجلد المؤقت
       await extractDir.delete(recursive: true);
       _addLog('🗑️ تم حذف المجلد المؤقت');
 
       _addLog('✅ انتهت العملية بنجاح!');
+      _addLog('📍 الملف موجود في مجلد التنزيلات (Download) باسم: $fileName');
 
       if (mounted) Navigator.pop(context);
 
-      // عرض رسالة مع زر فتح الملف
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('✅ تم الدمج بنجاح! الملف: $outputFileName'),
+          content: Text('✅ تم الدمج بنجاح!\nالملف في مجلد التنزيلات: $fileName'),
           backgroundColor: Colors.green,
           duration: const Duration(seconds: 5),
-          action: SnackBarAction(
-            label: 'فتح',
-            onPressed: () => OpenFile.open(outputFile.path),
-          ),
         ),
       );
     } catch (e, stackTrace) {
