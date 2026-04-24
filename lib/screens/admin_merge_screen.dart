@@ -143,7 +143,7 @@ class _AdminMergeScreenState extends State<AdminMergeScreen> {
             final existing = mergedBeneficiaries[key]!;
             final existingImagePath = existing['image_path']?.toString() ?? '';
             if (existingImagePath.isNotEmpty && await File(existingImagePath).exists()) {
-              continue; // نحتفظ بالصورة الحالية
+              continue;
             } else {
               mergedBeneficiaries[key] = Map<String, dynamic>.from(b);
             }
@@ -161,7 +161,7 @@ class _AdminMergeScreenState extends State<AdminMergeScreen> {
         if (imageFileName.isEmpty) continue;
         final currentPath = b['image_path']?.toString() ?? '';
         if (currentPath.isNotEmpty && await File(currentPath).exists()) {
-          continue; // موجودة وصالحة، لا نغيرها
+          continue;
         }
         final String? tempImagePath = imageIndex[imageFileName];
         if (tempImagePath != null && tempImagePath.isNotEmpty) {
@@ -186,18 +186,13 @@ class _AdminMergeScreenState extends State<AdminMergeScreen> {
       _addLog('📸 تم نقل $updatedCount صورة، لم يتم العثور على $notFoundCount صورة');
 
       // 7. حفظ JSON النهائي داخل مجلد التطبيق (آمن)
-      final outputFileName = 'merged_database_${DateTime.now().millisecondsSinceEpoch}.json';
-      final outputDir = Directory('/storage/emulated/0/Download');
-      if (!await outputDir.exists()) {
-       await outputDir.create(recursive: true);
-      }
-      final outputFileName = 'merged_database_${DateTime.now().millisecondsSinceEpoch}.json';
-      final outputFile = File('${outputDir.path}/$outputFileName');
+      final String outputFileName = 'merged_database_${DateTime.now().millisecondsSinceEpoch}.json';
+      final outputFile = File('${appDir.path}/$outputFileName');
       final outputData = {'beneficiaries': mergedBeneficiaries.values.toList()};
       await outputFile.writeAsString(jsonEncode(outputData));
-      _addLog('💾 تم حفظ الملف في مجلد التنزيلات: ${outputFile.path}');
+      _addLog('💾 تم حفظ الملف: ${outputFile.path}');
 
-      // تنظيف المجلد المؤقت
+      // 8. تنظيف المجلد المؤقت
       await extractDir.delete(recursive: true);
       _addLog('🗑️ تم حذف المجلد المؤقت');
 
@@ -205,21 +200,18 @@ class _AdminMergeScreenState extends State<AdminMergeScreen> {
 
       if (mounted) Navigator.pop(context);
 
-      // فتح الملف تلقائيًا
-      await OpenFile.open(outputFile.path);
-
-     // رسالة مع زر فتح آخر
+      // عرض رسالة مع زر فتح الملف
       ScaffoldMessenger.of(context).showSnackBar(
-       SnackBar(
-        content: Text('✅ تم الدمج والصور! الملف: $outputFileName'),
-        backgroundColor: Colors.green,
-        duration: const Duration(seconds: 5),
-        action: SnackBarAction(
-         label: 'فتح',
-         onPressed: () => OpenFile.open(outputFile.path),
+        SnackBar(
+          content: Text('✅ تم الدمج بنجاح! الملف: $outputFileName'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 5),
+          action: SnackBarAction(
+            label: 'فتح',
+            onPressed: () => OpenFile.open(outputFile.path),
+          ),
         ),
-       ),
-     );
+      );
     } catch (e, stackTrace) {
       if (mounted) Navigator.pop(context);
       _addLog('❌ خطأ: $e');
