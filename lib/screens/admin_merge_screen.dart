@@ -169,12 +169,12 @@ class _AdminMergeScreenState extends State<AdminMergeScreen> {
       _addLog('📸 تم تحديث $updatedCount مستفيد، لم يتم العثور على صور لـ $notFoundCount');
 
       // 6. حفظ النتيجة
-      final outputDir = await getApplicationDocumentsDirectory();
-      final outputPath = '${outputDir.path}/${_outputFileNameController.text}';
-      final outputFile = File(outputPath);
-      final outputData = {'beneficiaries': mergedBeneficiaries.values.toList()};
-      await outputFile.writeAsString(jsonEncode(outputData));
-      _addLog('💾 تم حفظ الملف النهائي: ${outputFile.path}');
+      final downloadDir = Directory('/storage/emulated/0/Download');
+      if (!await downloadDir.exists()) {
+       await downloadDir.create(recursive: true);
+      }
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final outputFile = File('${downloadDir.path}/merged_database_$timestamp.json');
       
       // 7. تنظيف المجلد المؤقت
       await extractDir.delete(recursive: true);
