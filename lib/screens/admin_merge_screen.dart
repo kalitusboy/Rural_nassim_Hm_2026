@@ -23,7 +23,7 @@ class _AdminMergeScreenState extends State<AdminMergeScreen> {
     setState(() {
       _log += '$message\n';
     });
-    print(message); // للتصحيح
+    print(message);
   }
 
   Future<void> _pickJsonFiles() async {
@@ -153,14 +153,11 @@ class _AdminMergeScreenState extends State<AdminMergeScreen> {
           if (!mergedBeneficiaries.containsKey(key)) {
             mergedBeneficiaries[key] = Map<String, dynamic>.from(b);
           } else {
-            // إذا كان موجوداً، نحافظ على الصورة القديمة إذا كانت صالحة
             final existing = mergedBeneficiaries[key]!;
             final existingImagePath = existing['image_path']?.toString() ?? '';
             if (existingImagePath.isNotEmpty && await File(existingImagePath).exists()) {
-              // نبقي على الصورة الموجودة
               continue;
             } else {
-              // نستبدل بالبيانات الجديدة (ربما تحتوي على صورة أفضل)
               mergedBeneficiaries[key] = Map<String, dynamic>.from(b);
             }
           }
@@ -179,19 +176,24 @@ class _AdminMergeScreenState extends State<AdminMergeScreen> {
         
         final currentPath = b['image_path']?.toString() ?? '';
         if (currentPath.isNotEmpty && await File(currentPath).exists()) {
-          continue; // الصورة موجودة بالفعل وصالحة
+          continue;
         }
         
-        if (imageIndex.containsKey(imageFileName)) {
-          final tempImagePath = imageIndex[imageFileName];
-          final fileExt = tempImagePath.split('.').last;
-          final newFileName = '${DateTime.now().millisecondsSinceEpoch}_$imageFileName.$fileExt';
-          final newPath = '${permanentImagesDir.path}/$newFileName';
-          await File(tempImagePath).copy(newPath);
-          b['image_path'] = newPath;
-          b['image_file_name'] = newFileName;
-          updatedCount++;
-          _addLog('✅ تم نقل وتعيين صورة لـ: ${b['full_name']}');
+        final String? tempImagePath = imageIndex[imageFileName];
+        if (tempImagePath != null && tempImagePath.isNotEmpty) {
+          try {
+            final fileExt = tempImagePath.split('.').last;
+            final safeFileName = imageFileName.replaceAll(RegExp(r'[^a-zA-Z0-9_.-]'), '_');
+            final newFileName = '${DateTime.now().millisecondsSinceEpoch}_$safeFileName.$fileExt';
+            final newPath = '${permanentImagesDir.path}/$newFileName';
+            await File(tempImagePath).copy(newPath);
+            b['image_path'] = newPath;
+            b['image_file_name'] = newFileName;
+            updatedCount++;
+            _addLog('✅ تم نقل وتعيين صورة لـ: ${b['full_name']}');
+          } catch (e) {
+            _addLog('⚠️ فشل نقل الصورة $imageFileName: $e');
+          }
         } else {
           notFoundCount++;
           _addLog('❌ لم يتم العثور على صورة: $imageFileName');
@@ -211,7 +213,7 @@ class _AdminMergeScreenState extends State<AdminMergeScreen> {
 
       _addLog('✅ انتهت العملية بنجاح!');
       
-      if (mounted) Navigator.pop(context); // إغلاق مؤشر التحميل
+      if (mounted) Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('تم الدمج بنجاح!\nالملف: ${outputFile.path.split('/').last}'),
