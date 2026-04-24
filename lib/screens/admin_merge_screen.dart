@@ -1,3 +1,4 @@
+
 import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -16,50 +17,44 @@ class _AdminMergeScreenState extends State<AdminMergeScreen> {
   List<File> _jsonFiles = [];
   List<File> _zipFiles = [];
   bool _isProcessing = false;
-  final TextEditingController _outputFileNameController = TextEditingController(text: 'merged_database_final.json');
   String _log = '';
 
-  void _addLog(String message) {
-    setState(() {
-      _log += '$message\n';
-    });
+  void _addLog(String msg) {
+    setState(() => _log += '$msg\n');
   }
 
-  Future<void> _pickJsonFiles() async {
+  Future<void> _pickFiles(String type) async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['json'],
+      allowedExtensions: [type == 'json' ? 'json' : 'zip'],
       allowMultiple: true,
     );
     if (result != null) {
       setState(() {
-        _jsonFiles = result.paths.map((path) => File(path!)).toList();
+        if (type == 'json') {
+          _jsonFiles = result.paths.map((p) => File(p!)).toList();
+        } else {
+          _zipFiles = result.paths.map((p) => File(p!)).toList();
+        }
       });
-      _addLog('✅ تم اختيار ${_jsonFiles.length} ملف JSON');
-    }
-  }
-
-  Future<void> _pickZipFiles() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['zip'],
-      allowMultiple: true,
-    );
-    if (result != null) {
-      setState(() {
-        _zipFiles = result.paths.map((path) => File(path!)).toList();
-      });
-      _addLog('✅ تم اختيار ${_zipFiles.length} ملف ZIP');
+      _addLog('✅ تم اختيار ${result.files.length} ملف $type');
     }
   }
 
   Future<void> _startMerge() async {
-    if (_jsonFiles.isEmpty) {
-      _addLog('❌ الرجاء اختيار ملفات JSON أولاً');
+    if (_jsonFiles.isEmpty || _zipFiles.isEmpty) {
+      _addLog('❌ اختر ملفات JSON و ZIP أولاً');
       return;
     }
-    if (_zipFiles.isEmpty) {
-      _addLog('❌ الرجاء اختيار ملفات ZIP أولاً');
+
+    // اختيار مكان حفظ الملف النهائي
+    String? outputPath = await FilePicker.platform.saveFile(
+      dialogTitle: 'حفظ قاعدة البيانات المدمجة',
+      fileName: 'merged_database_${DateTime.now().millisecondsSinceEpoch}.json',
+      allowedExtensions: ['json'],
+    );
+    if (outputPath == null) {
+      _addLog('❌ تم إلغاء الحفظ');
       return;
     }
 
@@ -69,129 +64,98 @@ class _AdminMergeScreenState extends State<AdminMergeScreen> {
     });
 
     try {
-      // 1. إنشاء مجلد مؤقت لفك ضغط الصور
+      // مجلد مؤقت لفك الضغط
       final tempDir = await getTemporaryDirectory();
-      final extractDir = Directory('${tempDir.path}/merged_images');
-      if (await extractDir.exists()) {
-        await extractDir.delete(recursive: true);
-      }
+      final extractDir = Directory('${tempDir.path}/temp_images');
+      if (await extractDir.exists()) await extractDir.delete(recursive: true);
       await extractDir.create();
 
-      // 2. فك ضغط جميع ملفات ZIP
-      int imagesCount = 0;
-      for (var zipFile in _zipFiles) {
-        _addLog('📦 فك ضغط: ${zipFile.path.split('/').last}');
-        final bytes = await zipFile.readAsBytes();
+      // فك ضغط ZIP
+      int imgCount = 0;
+      for (var zip in _zipFiles) {
+        _addLog('📦 فك ضغط: ${zip.path.split('/').last}');
+        final bytes = await zip.readAsBytes();
         final archive = ZipDecoder().decodeBytes(bytes);
         for (var file in archive) {
-          if (file.isFile) {
-            final filename = file.name;
-            final outputFile = File('${extractDir.path}/$filename');
-            await outputFile.create(recursive: true);
-            await outputFile.writeAsBytes(file.content);
-            imagesCount++;
+          if (file.isFile && file.name.toLowerCase().contains(RegExp(r'\.(jpg|jpeg|png)'))) {
+            final out = File('${extractDir.path}/${file.name.split('/').last}');
+            await out.create(recursive: true);
+            await out.writeAsBytes(file.content);
+            imgCount++;
           }
         }
       }
-      _addLog('✅ تم فك ضغط $imagesCount صورة');
+      _addLog('✅ تم فك ضغط $imgCount صورة');
 
-      // 3. بناء فهرس الصور (اسم الملف بدون امتداد -> المسار الكامل)
-      final Map<String, String> imageIndex = {};
-      await for (var entity in extractDir.list(recursive: true)) {
+      // فهرسة الصور
+      final Map<String, String> imageMap = {};
+      await for (var entity in extractDir.list()) {
         if (entity is File) {
-          final fileName = entity.path.split('/').last;
-          final lowerName = fileName.toLowerCase();
-          if (lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg') || lowerName.endsWith('.png')) {
-            final nameWithoutExt = fileName.split('.').first;
-            imageIndex[fileName] = entity.path;
-            imageIndex[nameWithoutExt] = entity.path;
-          }
+          final name = entity.path.split('/').last;
+          final nameNoExt = name.split('.').first;
+          imageMap[name] = entity.path;
+          imageMap[nameNoExt] = entity.path;
         }
       }
-      _addLog('✅ تم فهرسة ${imageIndex.length ~/ 2} صورة فريدة');
 
-      // 4. قراءة ودمج جميع ملفات JSON
-      final Map<String, Map<String, dynamic>> mergedBeneficiaries = {};
-      
+      // المجلد الدائم للصور
+      final appDir = await getApplicationDocumentsDirectory();
+      final permImageDir = Directory('${appDir.path}/merged_images');
+      if (!await permImageDir.exists()) await permImageDir.create();
+
+      // دمج JSON
+      final Map<String, Map<String, dynamic>> merged = {};
       for (var jsonFile in _jsonFiles) {
         _addLog('📄 قراءة JSON: ${jsonFile.path.split('/').last}');
-        final content = await jsonFile.readAsString();
-        final data = jsonDecode(content);
-        final beneficiaries = data['beneficiaries'] as List? ?? [];
-        
-        for (var b in beneficiaries) {
-          final firstName = b['first_name']?.toString() ?? '';
-          final lastName = b['last_name']?.toString() ?? '';
-          final birthDate = b['birth_date']?.toString() ?? '';
-          final address = b['address']?.toString() ?? '';
-          final key = '$firstName|$lastName|$birthDate|$address';
-          
-          if (!mergedBeneficiaries.containsKey(key)) {
-            mergedBeneficiaries[key] = Map<String, dynamic>.from(b);
-          } else {
-            // إذا كان موجوداً، نحاول تحديث مسار الصورة فقط إذا لم يكن هناك صورة حالية
-            final existing = mergedBeneficiaries[key]!;
-            final existingImagePath = existing['image_path']?.toString() ?? '';
-            final newImagePath = b['image_path']?.toString() ?? '';
-            
-            if ((existingImagePath.isEmpty || !await File(existingImagePath).exists()) && newImagePath.isNotEmpty) {
-              existing['image_path'] = newImagePath;
-              _addLog('🔄 تم تحديث مسار صورة: ${b['full_name']}');
-            }
+        final data = jsonDecode(await jsonFile.readAsString());
+        final list = data['beneficiaries'] as List? ?? [];
+        for (var b in list) {
+          final key = '${b['first_name']}|${b['last_name']}|${b['birth_date']}|${b['address']}';
+          if (!merged.containsKey(key)) merged[key] = Map.from(b);
+        }
+      }
+      _addLog('👥 إجمالي المستفيدين: ${merged.length}');
+
+      // تحديث مسارات الصور ونسخها إلى المجلد الدائم
+      int updated = 0, notFound = 0;
+      for (var b in merged.values) {
+        final imgName = b['image_file_name'] ?? '';
+        if (imgName.isEmpty) continue;
+        final current = b['image_path'] ?? '';
+        if (current.isNotEmpty && await File(current).exists()) continue;
+
+        if (imageMap.containsKey(imgName)) {
+          final src = imageMap[imgName]!;
+          final destName = src.split('/').last;
+          final dest = File('${permImageDir.path}/$destName');
+          if (!await dest.exists()) {
+            await File(src).copy(dest.path);
           }
-        }
-      }
-      _addLog('👥 إجمالي المستفيدين بعد الدمج: ${mergedBeneficiaries.length}');
-
-      // 5. تحديث مسارات الصور للمستفيدين (البحث في الصور المستخرجة)
-      int updatedCount = 0;
-      int notFoundCount = 0;
-      
-      for (var entry in mergedBeneficiaries.entries) {
-        final b = entry.value;
-        final imageFileName = b['image_file_name']?.toString() ?? '';
-        if (imageFileName.isEmpty) continue;
-        
-        final currentPath = b['image_path']?.toString() ?? '';
-        if (currentPath.isNotEmpty && await File(currentPath).exists()) {
-          continue; // الصورة موجودة بالفعل، لا نغيرها
-        }
-        
-        if (imageIndex.containsKey(imageFileName)) {
-          b['image_path'] = imageIndex[imageFileName];
-          updatedCount++;
-          _addLog('✅ تم تعيين صورة لـ: ${b['full_name']}');
+          b['image_path'] = dest.path;
+          updated++;
+          _addLog('✅ صورة لـ ${b['full_name']}');
         } else {
-          notFoundCount++;
-          _addLog('❌ لم يتم العثور على صورة: $imageFileName');
+          notFound++;
+          _addLog('❌ صورة مفقودة: $imgName');
         }
       }
-      _addLog('📸 تم تحديث $updatedCount مستفيد، لم يتم العثور على صور لـ $notFoundCount');
+      _addLog('📸 تم تحديث $updated مستفيد، مفقود: $notFound');
 
-      // 6. حفظ النتيجة
-      final downloadDir = Directory('/storage/emulated/0/Download');
-      if (!await downloadDir.exists()) {
-       await downloadDir.create(recursive: true);
-      }
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final outputFile = File('${downloadDir.path}/merged_database_$timestamp.json');
-      
-      // 7. تنظيف المجلد المؤقت
+      // حفظ الملف النهائي في المسار الذي اختاره المستخدم
+      final outFile = File(outputPath);
+      await outFile.writeAsString(jsonEncode({'beneficiaries': merged.values.toList()}));
+      _addLog('💾 تم الحفظ: ${outFile.path}');
+
+      // تنظيف
       await extractDir.delete(recursive: true);
-      
-      _addLog('✅ انتهت العملية بنجاح!');
-      
+
+      _addLog('✅ انتهى بنجاح');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('تم الحفظ بنجاح في: ${outputFile.path.split('/').last}'),
-          backgroundColor: Colors.green,
-        ),
+        SnackBar(content: Text('تم الحفظ في: ${outFile.path.split('/').last}'), backgroundColor: Colors.green),
       );
     } catch (e) {
       _addLog('❌ خطأ: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('خطأ: $e'), backgroundColor: Colors.red),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('خطأ: $e'), backgroundColor: Colors.red));
     } finally {
       setState(() => _isProcessing = false);
     }
@@ -200,12 +164,7 @@ class _AdminMergeScreenState extends State<AdminMergeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF1F5F9),
-      appBar: AppBar(
-        title: const Text('👥 دمج بيانات الأعوان (المدير)'),
-        backgroundColor: const Color(0xFF0D47A1),
-        foregroundColor: Colors.white,
-      ),
+      appBar: AppBar(title: const Text('👥 دمج بيانات الأعوان (المدير)'), backgroundColor: const Color(0xFF0D47A1)),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -216,42 +175,22 @@ class _AdminMergeScreenState extends State<AdminMergeScreen> {
                 child: Column(
                   children: [
                     ElevatedButton.icon(
-                      onPressed: _pickJsonFiles,
+                      onPressed: () => _pickFiles('json'),
                       icon: const Icon(Icons.folder_open),
-                      label: Text('اختر ملفات JSON (${_jsonFiles.length})'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF0D47A1),
-                        minimumSize: const Size(double.infinity, 50),
-                      ),
+                      label: Text('JSON (${_jsonFiles.length})'),
                     ),
                     const SizedBox(height: 12),
                     ElevatedButton.icon(
-                      onPressed: _pickZipFiles,
+                      onPressed: () => _pickFiles('zip'),
                       icon: const Icon(Icons.folder_zip),
-                      label: Text('اختر ملفات ZIP (${_zipFiles.length})'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFE67E22),
-                        minimumSize: const Size(double.infinity, 50),
-                      ),
+                      label: Text('ZIP (${_zipFiles.length})'),
                     ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _outputFileNameController,
-                      decoration: const InputDecoration(
-                        labelText: 'اسم ملف الإخراج',
-                        border: OutlineInputBorder(),
-                        suffixText: '.json',
-                      ),
-                    ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
                     ElevatedButton.icon(
                       onPressed: _isProcessing ? null : _startMerge,
-                      icon: _isProcessing ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.merge_type),
+                      icon: _isProcessing ? const CircularProgressIndicator() : const Icon(Icons.merge),
                       label: const Text('بدء الدمج'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF2E7D32),
-                        minimumSize: const Size(double.infinity, 50),
-                      ),
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
                     ),
                   ],
                 ),
@@ -266,13 +205,9 @@ class _AdminMergeScreenState extends State<AdminMergeScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text('سجل العمليات:', style: TextStyle(fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 8),
                       Expanded(
                         child: SingleChildScrollView(
-                          child: Text(
-                            _log.isEmpty ? 'انتظر بدء العملية...' : _log,
-                            style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-                          ),
+                          child: Text(_log.isEmpty ? '...' : _log, style: const TextStyle(fontFamily: 'monospace')),
                         ),
                       ),
                     ],
