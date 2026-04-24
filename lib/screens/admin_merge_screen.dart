@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:archive/archive.dart';
+import 'package:open_file/open_file.dart';
 
 class AdminMergeScreen extends StatefulWidget {
   const AdminMergeScreen({super.key});
@@ -64,17 +65,6 @@ class _AdminMergeScreenState extends State<AdminMergeScreen> {
       return;
     }
 
-    // اختيار مكان حفظ ملف JSON النهائي
-    String? outputFilePath = await FilePicker.platform.saveFile(
-      dialogTitle: "حفظ ملف قاعدة البيانات المدمجة",
-      fileName: "merged_database_${DateTime.now().millisecondsSinceEpoch}.json",
-      allowedExtensions: ['json'],
-    );
-    if (outputFilePath == null) {
-      _addLog('❌ تم إلغاء عملية الحفظ من قبل المستخدم');
-      return;
-    }
-
     setState(() {
       _isProcessing = true;
       _log = '';
@@ -111,7 +101,7 @@ class _AdminMergeScreenState extends State<AdminMergeScreen> {
       }
       _addLog('✅ تم فك ضغط $imagesCount ملف');
 
-      // 3. بناء فهرس الصور (اسم الملف بدون امتداد -> المسار الكامل)
+      // 3. بناء فهرس الصور
       final Map<String, String> imageIndex = {};
       await for (var entity in extractDir.list(recursive: true)) {
         if (entity is File) {
@@ -126,7 +116,7 @@ class _AdminMergeScreenState extends State<AdminMergeScreen> {
       }
       _addLog('✅ تم فهرسة ${imageIndex.length ~/ 2} صورة فريدة');
 
-      // 4. إنشاء المجلد الدائم للصور داخل التطبيق
+      // 4. المجلد الدائم للصور
       final appDir = await getApplicationDocumentsDirectory();
       final permanentImagesDir = Directory('${appDir.path}/merged_images');
       if (!await permanentImagesDir.exists()) {
@@ -134,29 +124,26 @@ class _AdminMergeScreenState extends State<AdminMergeScreen> {
       }
       _addLog('📁 المجلد الدائم للصور: ${permanentImagesDir.path}');
 
-      // 5. قراءة ودمج جميع ملفات JSON
+      // 5. دمج JSON
       final Map<String, Map<String, dynamic>> mergedBeneficiaries = {};
-      
       for (var jsonFile in _jsonFiles) {
         _addLog('📄 قراءة JSON: ${jsonFile.path.split('/').last}');
         final content = await jsonFile.readAsString();
         final data = jsonDecode(content);
         final beneficiaries = data['beneficiaries'] as List? ?? [];
-        
         for (var b in beneficiaries) {
           final firstName = b['first_name']?.toString() ?? '';
           final lastName = b['last_name']?.toString() ?? '';
           final birthDate = b['birth_date']?.toString() ?? '';
           final address = b['address']?.toString() ?? '';
           final key = '$firstName|$lastName|$birthDate|$address';
-          
           if (!mergedBeneficiaries.containsKey(key)) {
             mergedBeneficiaries[key] = Map<String, dynamic>.from(b);
           } else {
             final existing = mergedBeneficiaries[key]!;
             final existingImagePath = existing['image_path']?.toString() ?? '';
             if (existingImagePath.isNotEmpty && await File(existingImagePath).exists()) {
-              continue;
+              continue; // نحتفظ بالصورة الحالية
             } else {
               mergedBeneficiaries[key] = Map<String, dynamic>.from(b);
             }
@@ -165,20 +152,17 @@ class _AdminMergeScreenState extends State<AdminMergeScreen> {
       }
       _addLog('👥 إجمالي المستفيدين بعد الدمج: ${mergedBeneficiaries.length}');
 
-      // 6. نقل الصور إلى المجلد الدائم وتحديث المسارات
+      // 6. نقل الصور للمستفيدين الجدد أو الذين ليس لديهم صور
       int updatedCount = 0;
       int notFoundCount = 0;
-      
       for (var entry in mergedBeneficiaries.entries) {
         final b = entry.value;
         final imageFileName = b['image_file_name']?.toString() ?? '';
         if (imageFileName.isEmpty) continue;
-        
         final currentPath = b['image_path']?.toString() ?? '';
         if (currentPath.isNotEmpty && await File(currentPath).exists()) {
-          continue;
+          continue; // موجودة وصالحة، لا نغيرها
         }
-        
         final String? tempImagePath = imageIndex[imageFileName];
         if (tempImagePath != null && tempImagePath.isNotEmpty) {
           try {
@@ -190,7 +174,7 @@ class _AdminMergeScreenState extends State<AdminMergeScreen> {
             b['image_path'] = newPath;
             b['image_file_name'] = newFileName;
             updatedCount++;
-            _addLog('✅ تم نقل وتعيين صورة لـ: ${b['full_name']}');
+            _addLog('✅ تم نقل صورة لـ: ${b['full_name']}');
           } catch (e) {
             _addLog('⚠️ فشل نقل الصورة $imageFileName: $e');
           }
@@ -199,26 +183,33 @@ class _AdminMergeScreenState extends State<AdminMergeScreen> {
           _addLog('❌ لم يتم العثور على صورة: $imageFileName');
         }
       }
-      _addLog('📸 تم نقل وتحديث $updatedCount صورة، لم يتم العثور على $notFoundCount صورة');
+      _addLog('📸 تم نقل $updatedCount صورة، لم يتم العثور على $notFoundCount صورة');
 
-      // 7. حفظ JSON النهائي في المسار الذي اختاره المستخدم
-      final outputFile = File(outputFilePath);
+      // 7. حفظ JSON النهائي داخل مجلد التطبيق (آمن)
+      final outputFileName = 'merged_database_${DateTime.now().millisecondsSinceEpoch}.json';
+      final outputFile = File('${appDir.path}/$outputFileName');
       final outputData = {'beneficiaries': mergedBeneficiaries.values.toList()};
       await outputFile.writeAsString(jsonEncode(outputData));
-      _addLog('💾 تم حفظ ملف JSON النهائي في: ${outputFile.path}');
+      _addLog('💾 تم حفظ الملف: ${outputFile.path}');
 
       // 8. تنظيف المجلد المؤقت
       await extractDir.delete(recursive: true);
       _addLog('🗑️ تم حذف المجلد المؤقت');
 
       _addLog('✅ انتهت العملية بنجاح!');
-      
+
       if (mounted) Navigator.pop(context);
+
+      // عرض رسالة مع زر فتح الملف
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('تم الدمج بنجاح!\nالملف: ${outputFile.path.split('/').last}'),
+          content: Text('✅ تم الدمج بنجاح! الملف: $outputFileName'),
           backgroundColor: Colors.green,
-          duration: const Duration(seconds: 4),
+          duration: const Duration(seconds: 5),
+          action: SnackBarAction(
+            label: 'فتح',
+            onPressed: () => OpenFile.open(outputFile.path),
+          ),
         ),
       );
     } catch (e, stackTrace) {
@@ -277,8 +268,10 @@ class _AdminMergeScreenState extends State<AdminMergeScreen> {
                     const SizedBox(height: 16),
                     ElevatedButton.icon(
                       onPressed: _isProcessing ? null : _startMerge,
-                      icon: _isProcessing ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.merge_type),
-                      label: const Text('بدء الدمج واختيار مسار الحفظ'),
+                      icon: _isProcessing
+                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.merge_type),
+                      label: const Text('بدء الدمج والصور'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF2E7D32),
                         minimumSize: const Size(double.infinity, 50),
@@ -313,7 +306,9 @@ class _AdminMergeScreenState extends State<AdminMergeScreen> {
                           padding: const EdgeInsets.all(8),
                           child: SingleChildScrollView(
                             child: Text(
-                              _log.isEmpty ? '⚠️ لم يتم تنفيذ أي عملية بعد.\n\nالخطوات:\n1. اختر ملفات JSON\n2. اختر ملفات ZIP\n3. اضغط بدء الدمج\n4. اختر مكان حفظ الملف الناتج' : _log,
+                              _log.isEmpty
+                                  ? '⚠️ لم يتم تنفيذ أي عملية بعد.\n\nالخطوات:\n1. اختر ملفات JSON\n2. اختر ملفات ZIP\n3. اضغط بدء الدمج'
+                                  : _log,
                               style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
                             ),
                           ),
