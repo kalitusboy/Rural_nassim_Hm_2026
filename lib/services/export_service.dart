@@ -1,11 +1,12 @@
+
 import 'dart:io';
 import 'dart:convert';
 import 'package:archive/archive.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart';        // <-- أضف هذا لـ debugPrint
-import '../models/beneficiary.dart';             // <-- أضف هذا
+import 'package:flutter/foundation.dart';
+import '../models/beneficiary.dart';
 import 'database_service.dart';
 
 class ExportService {
@@ -91,9 +92,9 @@ class ExportService {
       }
       
       int imported = 0;   // سجلات جديدة
-      int updated = 0;    // سجلات غير مكتملة تم تحديثها
-      int skipped = 0;    // سجلات مكتملة تم تجاهلها
-      
+      int updated = 0;    // سجلات تم تحديثها (غير مكتمل + مكتمل بدون صورة)
+      int skipped = 0;    // سجلات مكتملة تم تجاهلها (لديها صورة أو لا توجد صورة جديدة)
+
       for (var file in files) {
         try {
           final jsonString = await file.readAsString();
@@ -124,27 +125,37 @@ class ExportService {
             } else {
               // موجود مسبقًا
               if (existing.done == 0) {
-                // غير مكتمل: نحدثه من الملف (الذي قد يحتوي على done=1)
-                
-                // الاحتفاظ بالصورة القديمة إذا لم توجد صورة في الملف الجديد
-                if (map['image_path'] == null && existing.imagePath != null) {
-                  map['image_path'] = existing.imagePath;
-                  map['image_file_name'] = existing.imageFileName;
+                // غير مكتمل: نحدثه من الملف (مع الاحتفاظ بالصورة القديمة إن وجدت وصالحة)
+                final newMap = Map<String, dynamic>.from(map);
+                // حفظ الصورة القديمة إذا كانت موجودة وصالحة
+                if (existing.imagePath != null && 
+                    existing.imagePath!.isNotEmpty && 
+                    await File(existing.imagePath!).exists()) {
+                  newMap['image_path'] = existing.imagePath;
+                  newMap['image_file_name'] = existing.imageFileName;
                 }
-                
-                // تعيين id السجل الموجود
-                map['id'] = existing.id;
-                
-                // إذا كان الملف لا يحدد done، نحافظ على القديمة
-                if (map['done'] == null) {
-                  map['done'] = existing.done;
-                }
-                
-                await _dbService.updateBeneficiaryFromMap(existing.id!, map);
+                newMap['id'] = existing.id;
+                if (newMap['done'] == null) newMap['done'] = existing.done;
+                await _dbService.updateBeneficiaryFromMap(existing.id!, newMap);
                 updated++;
               } else {
-                // مكتمل: لا نلمسه
-                skipped++;
+                // مكتمل (done == 1): نتحقق من الصورة فقط
+                final existingImagePath = existing.imagePath ?? '';
+                final existingImageExists = existingImagePath.isNotEmpty && await File(existingImagePath).exists();
+                final newImagePath = map['image_path']?.toString() ?? '';
+                final newImageFileName = map['image_file_name']?.toString() ?? '';
+
+                if (!existingImageExists && newImagePath.isNotEmpty) {
+                  // المكتمل ليس لديه صورة صالحة، والملف الجديد يوفر صورة
+                  await _dbService.updateBeneficiaryFromMap(existing.id!, {
+                    'image_path': newImagePath,
+                    'image_file_name': newImageFileName,
+                    'updated_at': DateTime.now().millisecondsSinceEpoch,
+                  });
+                  updated++;
+                } else {
+                  skipped++;
+                }
               }
             }
           }
