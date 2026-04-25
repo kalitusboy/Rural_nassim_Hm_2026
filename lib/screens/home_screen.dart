@@ -1,3 +1,4 @@
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -247,7 +248,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             Text('المطور: حميتي نسيم - الحوضان'),
             Text('nas.hamiti89@gmail.com'),
             SizedBox(height: 8),
-            Text('بحث سريع داخل SQLite مع فهارس، تحميل تدريجي، ومعالجة أكثر استقراراً للقوائم الكبيرة.'),
+            Text('بحث سريع  . احصاء السكن الريفي و الربط بالشبكات ،يسمح التطبيق بمعالجة أكثر استقراراً للقوائم الكبيرة.'),
           ],
         ),
         actions: [
@@ -269,20 +270,19 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           'إحصاء السكن الريفي 2026 | نسيم - الحوضان',
           style: TextStyle(fontSize: 15),
         ),
-        // ← زر المزامنة — الإضافة الوحيدة على هذا الملف
         actions: [
           IconButton(
-           icon: const Icon(Icons.sync, color: Colors.white),
-           tooltip: 'المزامنة',
-           onPressed: () async {
-            await Navigator.push(
-             context,
-             MaterialPageRoute(builder: (_) => const SyncScreen()),
-           );
-           // بعد العودة من شاشة المزامنة، حدّث البيانات لرؤية المستجدات
-            _reloadAfterDataChange();
-           },
+            icon: const Icon(Icons.sync, color: Colors.white),
+            tooltip: 'المزامنة',
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SyncScreen()),
+              );
+              _reloadAfterDataChange();
+            },
           ),
+        ], // ← القوس الصحيح هنا
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
