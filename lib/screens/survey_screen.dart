@@ -2,10 +2,12 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:path_provider/path_provider.dart';          // <-- أضف هذا
-import 'package:flutter_image_compress/flutter_image_compress.dart'; // <-- أضف هذا
+import 'package:path_provider/path_provider.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:path/path.dart' as p;
 import '../models/beneficiary.dart';
 import '../services/database_service.dart';
+import '../services/sync_service.dart';
 
 class SurveyScreen extends StatefulWidget {
   final Beneficiary beneficiary;
@@ -52,7 +54,19 @@ class _SurveyScreenState extends State<SurveyScreen> {
       return null;
     } catch (e) {
       debugPrint('فشل ضغط الصورة: $e');
-      return file; // العودة للصورة الأصلية عند الفشل
+      return file;
+    }
+  }
+
+  Future<File?> _moveToPermanentImageDir(File sourceFile, String imageFileName) async {
+    final imgDir = await SyncService().getImagesDir();
+    final permPath = p.join(imgDir.path, imageFileName);
+    try {
+      await sourceFile.copy(permPath);
+      return File(permPath);
+    } catch (e) {
+      debugPrint('فشل نسخ الصورة للمجلد الدائم: $e');
+      return null;
     }
   }
 
@@ -96,6 +110,31 @@ class _SurveyScreenState extends State<SurveyScreen> {
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
+      String? finalImagePath = _b.imagePath;
+      String? finalImageFileName = _b.imageFileName;
+
+      if (_img != null) {
+        final genName = _b.generateImageFileName();
+        final moved = await _moveToPermanentImageDir(_img!, genName);
+        if (moved != null) {
+          finalImagePath = moved.path;
+          finalImageFileName = genName;
+        }
+      } else if (_b.imagePath != null && _b.imagePath!.isNotEmpty) {
+        final imgDir = await SyncService().getImagesDir();
+        if (!_b.imagePath!.startsWith(imgDir.path)) {
+          final oldFile = File(_b.imagePath!);
+          if (await oldFile.exists()) {
+            final moved = await _moveToPermanentImageDir(
+                oldFile, _b.imageFileName ?? _b.generateImageFileName());
+            if (moved != null) {
+              finalImagePath = moved.path;
+              finalImageFileName = _b.imageFileName ?? _b.generateImageFileName();
+            }
+          }
+        }
+      }
+
       final updated = _b.copyWith(
         done: 1,
         electricity: _e ? 1 : 0,
@@ -103,8 +142,8 @@ class _SurveyScreenState extends State<SurveyScreen> {
         water: _w ? 1 : 0,
         sewage: _s ? 1 : 0,
         status: _status,
-        imagePath: _img?.path ?? _b.imagePath,
-        imageFileName: _img != null ? _b.generateImageFileName() : _b.imageFileName,
+        imagePath: finalImagePath,
+        imageFileName: finalImageFileName,
       );
       await _dbService.updateBeneficiary(updated);
       if (mounted) {
