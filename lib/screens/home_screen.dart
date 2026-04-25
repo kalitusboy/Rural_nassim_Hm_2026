@@ -8,6 +8,7 @@ import '../widgets/beneficiary_card.dart';
 import 'survey_screen.dart';
 import 'stats_screen.dart';
 import 'admin_merge_screen.dart';
+import 'advanced_stats_screen.dart'; // أضف هذا السطر مع بقية الاستيرادات
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -230,7 +231,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   _btn('👨‍💼 دمج بيانات الأعوان (مدير)', () {
     Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminMergeScreen()));
   }, const Color(0xFF9C27B0)),
-  const SizedBox(width: 8),
+   const SizedBox(width: 8),
+  _btn('📊 إحصائيات متقدمة', () {
+  Navigator.push(context, MaterialPageRoute(builder: (_) => AdvancedStatsScreen(allBeneficiaries: _allBeneficiaries)));
+  }, const Color(0xFF8E24AA)),                         
+   const SizedBox(width: 8),
   _btn('ℹ️ حول البرنامج', _showAbout, const Color(0xFF6C757D)),
 ],
                         ),
