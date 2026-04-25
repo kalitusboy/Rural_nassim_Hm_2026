@@ -272,14 +272,17 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         // ← زر المزامنة — الإضافة الوحيدة على هذا الملف
         actions: [
           IconButton(
-            icon: const Icon(Icons.sync, color: Colors.white),
-            tooltip: 'المزامنة',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const SyncScreen()),
-            ),
+           icon: const Icon(Icons.sync, color: Colors.white),
+           tooltip: 'المزامنة',
+           onPressed: () async {
+            await Navigator.push(
+             context,
+             MaterialPageRoute(builder: (_) => const SyncScreen()),
+           );
+           // بعد العودة من شاشة المزامنة، حدّث البيانات لرؤية المستجدات
+            _reloadAfterDataChange();
+           },
           ),
-        ],
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
