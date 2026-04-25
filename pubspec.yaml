@@ -22,6 +22,7 @@ dependencies:
   intl: ^0.18.0
   open_file: ^3.3.2
   flutter_image_compress: ^2.1.0
+  fl_chart: ^0.71.0
 
 dev_dependencies:
   flutter_test:
