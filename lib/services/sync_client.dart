@@ -4,7 +4,6 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'sync_service.dart';
 
-/// نتيجة المزامنة
 class SyncResult {
   final bool success;
   final int added;
@@ -39,8 +38,6 @@ class SyncResult {
       SyncResult._(success: false, error: error);
 }
 
-/// عميل المزامنة — يعمل على هواتف الأعوان
-/// يتصل بسيرفر المدير عبر WiFi المكتب
 class SyncClient {
   static final SyncClient _instance = SyncClient._internal();
   factory SyncClient() => _instance;
@@ -62,9 +59,6 @@ class SyncClient {
         'content-type': 'application/json; charset=utf-8',
       };
 
-  // ─────────────────────────────────────────────
-  // اختبار الاتصال بالسيرفر
-  // ─────────────────────────────────────────────
   Future<bool> ping() async {
     try {
       final res = await http
@@ -76,9 +70,6 @@ class SyncClient {
     }
   }
 
-  // ─────────────────────────────────────────────
-  // تحقق من كلمة المرور
-  // ─────────────────────────────────────────────
   Future<bool> authenticate() async {
     try {
       final res = await http
@@ -96,29 +87,28 @@ class SyncClient {
     }
   }
 
-  // ─────────────────────────────────────────────
-  // المزامنة الكاملة
-  // ─────────────────────────────────────────────
   Future<SyncResult> sync({void Function(String)? onProgress}) async {
     try {
-      // 1. اتصال
       onProgress?.call('🔌 جاري الاتصال بالسيرفر...');
       if (!await ping()) {
         return SyncResult.fail(
             'تعذر الاتصال بالسيرفر\nتأكد من:\n• أن جهاز المدير مفتوح\n• أن السيرفر يعمل\n• أنك متصل بنفس الـ WiFi');
       }
 
-      // 2. تحقق من كلمة المرور
       onProgress?.call('🔑 جاري التحقق من كلمة المرور...');
       if (!await authenticate()) {
         return SyncResult.fail('كلمة المرور خاطئة');
       }
 
-      // 3. نسخة احتياطية
       onProgress?.call('💾 جاري النسخ الاحتياطي...');
       await _sync.backup();
 
-      // 4. رفع السجلات المحلية + استقبال الكاملة
+      // 1. رفع الصور المحلية الجديدة أولاً
+      onProgress?.call('🖼️ جاري رفع الصور...');
+      final imgUp = await _uploadNewImages();
+      onProgress?.call('📤 تم رفع $imgUp صورة');
+
+      // 2. إرسال السجلات واستقبال التحديثات
       onProgress?.call('📤 جاري رفع البيانات...');
       final localRecords = await _sync.getAllRecords();
 
@@ -134,22 +124,22 @@ class SyncClient {
         return SyncResult.fail('خطأ من السيرفر: ${res.statusCode}');
       }
 
-      // 5. دمج السجلات المستقبلة
       onProgress?.call('🔄 جاري دمج البيانات...');
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       final allRecords =
           (data['records'] as List).cast<Map<String, dynamic>>();
       final stats = await _sync.mergeRecords(allRecords);
 
-      // 6. مزامنة الصور
-      onProgress?.call('🖼️ جاري مزامنة الصور...');
-      final imgStats = await _syncImages();
+      // 3. تنزيل الصور الجديدة من السيرفر
+      onProgress?.call('🖼️ جاري تنزيل الصور الجديدة...');
+      final imgDown = await _downloadNewImages();
+      onProgress?.call('📥 تم تنزيل $imgDown صورة');
 
       return SyncResult.ok(
         added: stats['added'] ?? 0,
         updated: stats['updated'] ?? 0,
-        imagesUp: imgStats['up'] ?? 0,
-        imagesDown: imgStats['down'] ?? 0,
+        imagesUp: imgUp,
+        imagesDown: imgDown,
       );
     } on SocketException {
       return SyncResult.fail('لا يوجد اتصال بالشبكة');
@@ -160,28 +150,14 @@ class SyncClient {
     }
   }
 
-  // ─────────────────────────────────────────────
-  // مزامنة الصور (رفع + تنزيل)
-  // ─────────────────────────────────────────────
-  Future<Map<String, int>> _syncImages() async {
-    int up = 0, down = 0;
+  Future<int> _uploadNewImages() async {
+    int up = 0;
     try {
-      // قائمة صور السيرفر
-      final listRes = await http
-          .get(Uri.parse('$_base/images/list'), headers: _headers)
-          .timeout(const Duration(seconds: 10));
-      if (listRes.statusCode != 200) return {'up': 0, 'down': 0};
-
-      final listData =
-          jsonDecode(listRes.body) as Map<String, dynamic>;
-      final serverNames =
-          Set<String>.from((listData['filenames'] as List).cast<String>());
       final localNames =
           Set<String>.from(await _sync.getLocalImageFilenames());
       final imagesDir = await _sync.getImagesDir();
 
-      // رفع ما عندي وليس عند السيرفر
-      for (final name in localNames.difference(serverNames)) {
+      for (final name in localNames) {
         final file = File(p.join(imagesDir.path, name));
         if (!await file.exists()) continue;
         try {
@@ -199,8 +175,24 @@ class SyncClient {
           up++;
         } catch (_) {}
       }
+    } catch (_) {}
+    return up;
+  }
 
-      // تنزيل ما عند السيرفر وليس عندي
+  Future<int> _downloadNewImages() async {
+    int down = 0;
+    try {
+      final listRes = await http
+          .get(Uri.parse('$_base/images/list'), headers: _headers)
+          .timeout(const Duration(seconds: 10));
+      if (listRes.statusCode != 200) return 0;
+
+      final serverNames = Set<String>.from(
+          (jsonDecode(listRes.body)['filenames'] as List).cast<String>());
+      final localNames =
+          Set<String>.from(await _sync.getLocalImageFilenames());
+      final imagesDir = await _sync.getImagesDir();
+
       for (final name in serverNames.difference(localNames)) {
         try {
           final imgRes = await http
@@ -213,9 +205,7 @@ class SyncClient {
           }
         } catch (_) {}
       }
-    } catch (_) {
-      // فشل مزامنة الصور لا يوقف العملية كلها
-    }
-    return {'up': up, 'down': down};
+    } catch (_) {}
+    return down;
   }
 }
