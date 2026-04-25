@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:archive/archive.dart';
 import 'package:open_file/open_file.dart';
+import '../services/sync_service.dart'; // ← لاستخدام نفس مجلد الصور
 
 class AdminMergeScreen extends StatefulWidget {
   const AdminMergeScreen({super.key});
@@ -116,12 +117,8 @@ class _AdminMergeScreenState extends State<AdminMergeScreen> {
       }
       _addLog('✅ تم فهرسة ${imageIndex.length ~/ 2} صورة فريدة');
 
-      // 4. المجلد الدائم للصور
-      final appDir = await getApplicationDocumentsDirectory();
-      final permanentImagesDir = Directory('${appDir.path}/merged_images');
-      if (!await permanentImagesDir.exists()) {
-        await permanentImagesDir.create(recursive: true);
-      }
+      // 4. المجلد الدائم للصور (موحّد مع المزامنة)
+      final permanentImagesDir = await SyncService().getImagesDir();
       _addLog('📁 المجلد الدائم للصور: ${permanentImagesDir.path}');
 
       // 5. دمج JSON
