@@ -149,36 +149,36 @@ class SyncClient {
       return SyncResult.fail('خطأ غير متوقع: $e');
     }
   }
-
   Future<int> _uploadNewImages() async {
-    int up = 0;
+   int up = 0;
+   try {
+    final localNames = Set<String>.from(await _sync.getLocalImageFilenames());
+    final imagesDir = await _sync.getImagesDir();
+
+   for (final name in localNames) {
+    final file = File(p.join(imagesDir.path, name));
+    if (!await file.exists()) continue;
     try {
-      final localNames =
-          Set<String>.from(await _sync.getLocalImageFilenames());
-      final imagesDir = await _sync.getImagesDir();
-
-      for (final name in localNames) {
-        final file = File(p.join(imagesDir.path, name));
-        if (!await file.exists()) continue;
-        try {
-          final bytes = await file.readAsBytes();
-          await http
-              .post(
-                Uri.parse('$_base/images/$name'),
-                headers: {
-                  'x-password': _password,
-                  'content-type': 'application/octet-stream',
-                },
-                body: bytes,
-              )
-              .timeout(const Duration(seconds: 30));
+     final bytes = await file.readAsBytes();
+     final res = await http
+      .post(
+       Uri.parse('$_base/images/$name'),
+        headers: {
+        'x-password': _password,
+        'content-type': 'application/octet-stream',
+        },
+        body: bytes,
+       )
+       .timeout(const Duration(seconds: 30));
+      if (res.statusCode == 200) {
           up++;
-        } catch (_) {}
-      }
+         }
+      } catch (_) {}
+     }
     } catch (_) {}
-    return up;
+   return up;
   }
-
+  
   Future<int> _downloadNewImages() async {
     int down = 0;
     try {
