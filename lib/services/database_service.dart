@@ -23,21 +23,22 @@ class DatabaseService {
   }
 
   Future<Database> _initDatabase() async {
-    final documentsDirectory = await getApplicationDocumentsDirectory();
-    final path = join(documentsDirectory.path, 'ihsa_2026.db');
-
-    return openDatabase(
-      path,
-      version: _dbVersion,
-      onConfigure: (db) async {
-        await db.execute('PRAGMA journal_mode=WAL');
-        await db.execute('PRAGMA synchronous=NORMAL');
-      },
-      onCreate: _onCreate,
-      onOpen: (db) async {
-        await _createIndexes(db);
-      },
-    );
+   final documentsDirectory = await getApplicationDocumentsDirectory();
+   final path = join(documentsDirectory.path, 'ihsa_2026.db');
+ 
+   return openDatabase(
+    path,
+    version: _dbVersion,
+    onConfigure: (db) async {
+      // ✅ استخدم rawQuery بدلاً من execute لأوامر PRAGMA
+      await db.rawQuery('PRAGMA journal_mode=WAL');
+      await db.rawQuery('PRAGMA synchronous=NORMAL');
+    },
+     onCreate: _onCreate,
+     onOpen: (db) async {
+      await _createIndexes(db);
+     },
+   );
   }
 
   Future<void> _onCreate(Database db, int version) async {
