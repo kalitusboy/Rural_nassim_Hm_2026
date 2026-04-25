@@ -26,7 +26,7 @@ class _StatsScreenState extends State<StatsScreen> {
 
   final List<List<dynamic>> _mainRows = [];
   final List<String> _mainHeaders = [
-    'البرنامج', 'الحصة', 'منجزة', 'نسبة الإنجاز %',
+    'البرنامج', 'الحصة', 'محصاة', 'نسبة الإنجاز %',
     'في طور الانجاز', 'على مستوى الاعمدة', 'منتهية غير مشغولة', 'منتهية ومشغولة',
     'كهرباء (كل الحالات)', 'غاز (كل الحالات)', 'مياه (كل الحالات)', 'تطهير (كل الحالات)'
   ];
@@ -87,7 +87,7 @@ class _StatsScreenState extends State<StatsScreen> {
     _grandStatus.updateAll((key, value) => 0);
     _grandE = _grandG = _grandW = _grandS = 0;
 
-    // إضافة صف لكل برنامج حتى لو لم يكن فيه مكتملين
+    // إضافة صف لكل برنامج حتى لو لم تكن فيه حالات محصاة
     for (var program in programs) {
       final programData = _data.where((b) => _normalizeProgram(b.program) == program).toList();
       final programDone = programData.where((b) => b.done == 1).toList();
@@ -304,7 +304,7 @@ Future<void> _exportStatistics() async {
                         ),
                         const SizedBox(width: 16),
                         Expanded(
-                          child: _buildSummaryItem('المنجز', '$_grandDone ($totalProgress%)', Icons.check_circle, const Color(0xFF2E7D32)),
+                          child: _buildSummaryItem('المحصاة', '$_grandDone ($totalProgress%)', Icons.check_circle, const Color(0xFF2E7D32)),
                         ),
                       ],
                     ),
