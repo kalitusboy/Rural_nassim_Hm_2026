@@ -144,6 +144,7 @@ class _SurveyScreenState extends State<SurveyScreen> {
         status: _status,
         imagePath: finalImagePath,
         imageFileName: finalImageFileName,
+        updatedAt: DateTime.now().add(const Duration(minutes: 1)),  // ← أولوية لهذا التحديث
       );
       await _dbService.updateBeneficiary(updated);
       if (mounted) {
