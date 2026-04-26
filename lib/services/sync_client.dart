@@ -1,8 +1,9 @@
+
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';  // ← أُضيفت
+import 'package:path_provider/path_provider.dart';
 import 'sync_service.dart';
 
 class SyncResult {
@@ -101,11 +102,9 @@ class SyncClient {
       onProgress?.call('💾 جاري النسخ الاحتياطي...');
       await _sync.backup();
 
-      // 1. إعداد ملخصي
+      // 1. إرسال الملخص واستقبال تحديثات المدير
       onProgress?.call('📋 جاري إعداد ملخص البيانات...');
       final mySummary = await _sync.getSummary();
-
-      // 2. إرسال الملخص إلى السيرفر واستقبال ZIP الفروقات منه
       onProgress?.call('🔄 جاري تبادل الفروقات...');
       final response = await http
           .post(
@@ -119,7 +118,7 @@ class SyncClient {
         return SyncResult.fail('فشل metasync: ${response.statusCode}');
       }
 
-      // 3. فك ZIP المستلم من المدير (إن وجد)
+      // 2. فك ZIP المستلم من المدير
       int added = 0, updated = 0, imagesDown = 0;
       if (response.headers['content-type'] == 'application/zip') {
         final tmpDir = await getTemporaryDirectory();
@@ -135,6 +134,24 @@ class SyncClient {
         if (body['ok'] != true) {
           return SyncResult.fail(body['error'] ?? 'فشل غير معروف');
         }
+      }
+
+      // 3. رفع حزمة العون إلى المدير (الاتجاه المعاكس)
+      onProgress?.call('📤 جاري رفع تحديثاتي إلى المدير...');
+      try {
+        final myZip = await _sync.createZipPackage();
+        await http
+            .post(
+              Uri.parse('$_base/upload_zip'),
+              headers: {
+                'x-password': _password,
+                'content-type': 'application/octet-stream',
+              },
+              body: await myZip.readAsBytes(),
+            )
+            .timeout(const Duration(minutes: 5));
+      } catch (_) {
+        // إذا فشل الرفع لا نوقف المزامنة، يمكن إعلام المستخدم في الإصدارات المستقبلية
       }
 
       onProgress?.call('✅ تمت المزامنة بنجاح');
