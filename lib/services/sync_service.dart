@@ -10,9 +10,6 @@ class SyncService {
 
   final _db = DatabaseService();
 
-  // ─────────────────────────────────────────────────────────
-  // مفتاح التعرف على السجل (نفس الشخص على أجهزة مختلفة)
-  // ─────────────────────────────────────────────────────────
   static String _key(Map<String, dynamic> r) {
     final fn = (r['first_name'] ?? '').toString().trim().toLowerCase();
     final ln = (r['last_name'] ?? '').toString().trim().toLowerCase();
@@ -21,26 +18,29 @@ class SyncService {
     return '$fn|$ln|$bd|$ad';
   }
 
-  // ─────────────────────────────────────────────────────────
-  // قاعدة حل التعارض — done=1 يفوز دائماً
-  // ─────────────────────────────────────────────────────────
+  // قاعدة حل التعارض المُحسَّنة
   static Map<String, dynamic> _resolve(
     Map<String, dynamic> local,
     Map<String, dynamic> remote,
   ) {
-    final done =
-        ((local['done'] as int? ?? 0) == 1 || (remote['done'] as int? ?? 0) == 1)
-            ? 1
-            : 0;
+    final localDone = local['done'] as int? ?? 0;
+    final remoteDone = remote['done'] as int? ?? 0;
+
+    // ✅ إذا كان أحد الطرفين مُحصى (done=1) والآخر لا → المُحصى يفوز دائمًا
+    if (localDone == 1 && remoteDone == 0) {
+      return {...local, 'id': local['id']};
+    }
+    if (remoteDone == 1 && localDone == 0) {
+      return {...remote, 'id': local['id']};
+    }
+
+    // غير ذلك نقارن updated_at (الأحدث هو الفائز)
     final localTs = local['updated_at'] as int? ?? 0;
     final remoteTs = remote['updated_at'] as int? ?? 0;
     final winner = remoteTs > localTs ? remote : local;
-    return {...winner, 'done': done, 'id': local['id']};
+    return {...winner, 'id': local['id']};
   }
 
-  // ─────────────────────────────────────────────────────────
-  // دمج السجلات الواردة في قاعدة البيانات المحلية
-  // ─────────────────────────────────────────────────────────
   Future<Map<String, int>> mergeRecords(
       List<Map<String, dynamic>> incoming) async {
     final db = await _db.database;
@@ -66,7 +66,7 @@ class SyncService {
         await db.insert('beneficiaries', toInsert);
         added++;
       } else {
-        // سجل موجود — حلّ التعارض
+        // سجل موجود – حل التعارض
         final merged = _resolve(localMap[k]!, remote);
         if ((merged['image_file_name'] as String?)?.isNotEmpty == true) {
           merged['image_path'] =
@@ -82,18 +82,11 @@ class SyncService {
     return {'added': added, 'updated': updated};
   }
 
-  // ─────────────────────────────────────────────────────────
-  // كل السجلات
-  // ─────────────────────────────────────────────────────────
   Future<List<Map<String, dynamic>>> getAllRecords() async {
     final db = await _db.database;
     return db.query('beneficiaries');
   }
 
-  // ─────────────────────────────────────────────────────────
-  // الصور المذكورة في قاعدة البيانات (المصدر الموثوق الوحيد)
-  // يُرجع قائمة من {name, path}
-  // ─────────────────────────────────────────────────────────
   Future<List<Map<String, String>>> getDbImages() async {
     final db = await _db.database;
     final rows = await db.query(
@@ -109,11 +102,10 @@ class SyncService {
       final name = (row['image_file_name'] as String?)?.trim() ?? '';
       if (name.isEmpty) continue;
 
-      // ابحث عن الملف في عدة مواقع محتملة
       final candidates = [
-        row['image_path'] as String? ?? '',          // المسار المحفوظ في DB
-        p.join(imgDir.path, name),                   // مجلد images/
-        p.join(p.dirname(imgDir.path), name),         // مجلد الجذر (نسخ قديمة)
+        row['image_path'] as String? ?? '',
+        p.join(imgDir.path, name),
+        p.join(p.dirname(imgDir.path), name),
       ];
 
       String foundPath = '';
@@ -131,17 +123,11 @@ class SyncService {
     return result;
   }
 
-  // ─────────────────────────────────────────────────────────
-  // أسماء الصور فقط (للمقارنة مع السيرفر)
-  // ─────────────────────────────────────────────────────────
   Future<Set<String>> getLocalImageNames() async {
     final dbImgs = await getDbImages();
     return dbImgs.map((e) => e['name']!).toSet();
   }
 
-  // ─────────────────────────────────────────────────────────
-  // مجلد الصور الدائم
-  // ─────────────────────────────────────────────────────────
   Future<Directory> getImagesDir() async {
     final docsDir = await getApplicationDocumentsDirectory();
     final imgDir = Directory(p.join(docsDir.path, 'images'));
@@ -149,13 +135,9 @@ class SyncService {
     return imgDir;
   }
 
-  // ─────────────────────────────────────────────────────────
-  // نسخة احتياطية تلقائية
-  // ─────────────────────────────────────────────────────────
   Future<void> backup() async {
     try {
       final docsDir = await getApplicationDocumentsDirectory();
-      // جرّب الاسمين الشائعين
       for (final dbName in ['ihsa_2026.db', 'rural_nassim.db', 'beneficiaries.db']) {
         final src = File(p.join(docsDir.path, dbName));
         if (await src.exists()) {
