@@ -140,6 +140,7 @@ class Beneficiary {
     String? birthDate, String? birthPlace, String? address, String? program,
     int? done, int? electricity, int? gas, int? water, int? sewage,
     String? status, String? imagePath, String? imageFileName,
+    DateTime? updatedAt,     // ← أضيف
   }) {
     return Beneficiary(
       id: id ?? this.id,
@@ -158,6 +159,7 @@ class Beneficiary {
       status: status ?? this.status,
       imagePath: imagePath ?? this.imagePath,
       imageFileName: imageFileName ?? this.imageFileName,
+      updatedAt: updatedAt ?? this.updatedAt,   // ← أضيف
     );
   }
 }
