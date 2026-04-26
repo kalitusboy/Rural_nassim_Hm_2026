@@ -96,6 +96,7 @@ class SyncService {
     }
     final List<Map<String, dynamic>> missingAtRemote = [];
     final Set<String> imageNamesToSend = {};
+
     for (final entry in localMap.entries) {
       final k = entry.key;
       final localItem = entry.value;
@@ -125,15 +126,18 @@ class SyncService {
     final jsonStr = jsonEncode({'beneficiaries': records});
     archive.addFile(ArchiveFile('diff.json', jsonStr.length, utf8.encode(jsonStr)));
     final imgDir = await getImagesDir();
+
     for (final name in imageNames) {
-      // حاول تحميل الصورة باسمها المحدد، أو ابحث عن أي ملف بنفس الاسم الأساسي
       File file = File(p.join(imgDir.path, name));
       if (!await file.exists()) {
         final baseName = p.basenameWithoutExtension(name);
-        final found = imgDir.listSync().firstWhere(
-          (f) => f is File && p.basenameWithoutExtension(f.path) == baseName,
-          orElse: () => null,
-        );
+        FileSystemEntity? found;
+        await for (final entity in imgDir.list()) {
+          if (entity is File && p.basenameWithoutExtension(entity.path) == baseName) {
+            found = entity;
+            break;
+          }
+        }
         if (found != null) file = found as File;
       }
       if (await file.exists()) {
@@ -141,6 +145,7 @@ class SyncService {
         archive.addFile(ArchiveFile(p.basename(file.path), bytes.length, bytes));
       }
     }
+
     final zipData = ZipEncoder().encode(archive);
     final tmpDir = await getTemporaryDirectory();
     final zipFile = File(p.join(tmpDir.path, 'diff_${DateTime.now().millisecondsSinceEpoch}.zip'));
@@ -155,7 +160,6 @@ class SyncService {
     archive.addFile(ArchiveFile('data.json', jsonStr.length, utf8.encode(jsonStr)));
 
     final imgDir = await getImagesDir();
-    // قائمة بجميع ملفات الصور الفعلية
     final existingFiles = <String>[];
     await for (final entity in imgDir.list()) {
       if (entity is File) {
@@ -222,17 +226,19 @@ class SyncService {
       final data = jsonDecode(jsonContent) as Map<String, dynamic>;
       final records = (data['beneficiaries'] as List).cast<Map<String, dynamic>>();
 
-      // تصحيح image_file_name في السجلات إذا لم تتطابق مع الملفات الموجودة
       for (final rec in records) {
         final imgName = rec['image_file_name'] as String?;
         if (imgName != null && imgName.isNotEmpty) {
           final candidate = File(p.join(imgDir.path, imgName));
           if (!await candidate.exists()) {
             final baseName = p.basenameWithoutExtension(imgName);
-            final found = imgDir.listSync().firstWhere(
-              (f) => f is File && p.basenameWithoutExtension(f.path) == baseName,
-              orElse: () => null,
-            );
+            FileSystemEntity? found;
+            await for (final entity in imgDir.list()) {
+              if (entity is File && p.basenameWithoutExtension(entity.path) == baseName) {
+                found = entity;
+                break;
+              }
+            }
             if (found != null) {
               rec['image_file_name'] = p.basename(found.path);
             }
