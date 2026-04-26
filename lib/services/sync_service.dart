@@ -1,4 +1,7 @@
+
+import 'dart:convert';
 import 'dart:io';
+import 'package:archive/archive.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'database_service.dart';
@@ -10,6 +13,9 @@ class SyncService {
 
   final _db = DatabaseService();
 
+  // ─────────────────────────────────────────────────────────
+  // مفتاح التعرف على السجل
+  // ─────────────────────────────────────────────────────────
   static String _key(Map<String, dynamic> r) {
     final fn = (r['first_name'] ?? '').toString().trim().toLowerCase();
     final ln = (r['last_name'] ?? '').toString().trim().toLowerCase();
@@ -18,29 +24,27 @@ class SyncService {
     return '$fn|$ln|$bd|$ad';
   }
 
-  // قاعدة حل التعارض المُحسَّنة
+  // ─────────────────────────────────────────────────────────
+  // قاعدة حل التعارض
+  // ─────────────────────────────────────────────────────────
   static Map<String, dynamic> _resolve(
     Map<String, dynamic> local,
     Map<String, dynamic> remote,
   ) {
     final localDone = local['done'] as int? ?? 0;
     final remoteDone = remote['done'] as int? ?? 0;
+    if (localDone == 1 && remoteDone == 0) return {...local, 'id': local['id']};
+    if (remoteDone == 1 && localDone == 0) return {...remote, 'id': local['id']};
 
-    // ✅ إذا كان أحد الطرفين مُحصى (done=1) والآخر لا → المُحصى يفوز دائمًا
-    if (localDone == 1 && remoteDone == 0) {
-      return {...local, 'id': local['id']};
-    }
-    if (remoteDone == 1 && localDone == 0) {
-      return {...remote, 'id': local['id']};
-    }
-
-    // غير ذلك نقارن updated_at (الأحدث هو الفائز)
     final localTs = local['updated_at'] as int? ?? 0;
     final remoteTs = remote['updated_at'] as int? ?? 0;
     final winner = remoteTs > localTs ? remote : local;
     return {...winner, 'id': local['id']};
   }
 
+  // ─────────────────────────────────────────────────────────
+  // دمج السجلات الواردة في قاعدة البيانات المحلية
+  // ─────────────────────────────────────────────────────────
   Future<Map<String, int>> mergeRecords(
       List<Map<String, dynamic>> incoming) async {
     final db = await _db.database;
@@ -57,20 +61,16 @@ class SyncService {
     for (final remote in incoming) {
       final k = _key(remote);
       if (!localMap.containsKey(k)) {
-        // سجل جديد
         final toInsert = Map<String, dynamic>.from(remote)..remove('id');
         if ((toInsert['image_file_name'] as String?)?.isNotEmpty == true) {
-          toInsert['image_path'] =
-              p.join(imgDir.path, toInsert['image_file_name']);
+          toInsert['image_path'] = p.join(imgDir.path, toInsert['image_file_name']);
         }
         await db.insert('beneficiaries', toInsert);
         added++;
       } else {
-        // سجل موجود – حل التعارض
         final merged = _resolve(localMap[k]!, remote);
         if ((merged['image_file_name'] as String?)?.isNotEmpty == true) {
-          merged['image_path'] =
-              p.join(imgDir.path, merged['image_file_name']);
+          merged['image_path'] = p.join(imgDir.path, merged['image_file_name']);
         }
         final id = merged['id'];
         final toUpdate = Map<String, dynamic>.from(merged)..remove('id');
@@ -82,52 +82,155 @@ class SyncService {
     return {'added': added, 'updated': updated};
   }
 
+  // ─────────────────────────────────────────────────────────
+  // إرجاع جميع السجلات كـ List<Map>
+  // ─────────────────────────────────────────────────────────
   Future<List<Map<String, dynamic>>> getAllRecords() async {
     final db = await _db.database;
     return db.query('beneficiaries');
   }
 
-  Future<List<Map<String, String>>> getDbImages() async {
+  // ─────────────────────────────────────────────────────────
+  // إنشاء ملخص (ملف JSON صغير) للمقارنة
+  // ─────────────────────────────────────────────────────────
+  Future<List<Map<String, dynamic>>> getSummary() async {
     final db = await _db.database;
-    final rows = await db.query(
-      'beneficiaries',
-      columns: ['image_file_name', 'image_path'],
-      where: "image_file_name IS NOT NULL AND image_file_name != ''",
-    );
+    final rows = await db.query('beneficiaries',
+        columns: ['id', 'first_name', 'last_name', 'birth_date', 'address',
+                  'updated_at', 'done', 'image_file_name']);
+    // تحويل إلى List<Map> بسيط للإرسال
+    return rows.map((r) => {
+      'first_name': r['first_name'],
+      'last_name': r['last_name'],
+      'birth_date': r['birth_date'],
+      'address': r['address'],
+      'updated_at': r['updated_at'],
+      'done': r['done'],
+      'image_file_name': r['image_file_name'],
+    }).toList();
+  }
 
-    final imgDir = await getImagesDir();
-    final result = <Map<String, String>>[];
+  // ─────────────────────────────────────────────────────────
+  // المقارنة وإرجاع السجلات المفقودة / الأحدث عندي
+  // ─────────────────────────────────────────────────────────
+  Future<Map<String, dynamic>> compareAndGetMissing(
+      List<Map<String, dynamic>> remoteSummary) async {
+    final localRecords = await getAllRecords();
+    final Map<String, Map<String, dynamic>> localMap = {};
+    for (final r in localRecords) {
+      localMap[_key(r)] = Map<String, dynamic>.from(r);
+    }
 
-    for (final row in rows) {
-      final name = (row['image_file_name'] as String?)?.trim() ?? '';
-      if (name.isEmpty) continue;
+    final List<Map<String, dynamic>> missingAtRemote = []; // ما عندي وليس عند البعيد
+    final Set<String> imageNamesToSend = {};
 
-      final candidates = [
-        row['image_path'] as String? ?? '',
-        p.join(imgDir.path, name),
-        p.join(p.dirname(imgDir.path), name),
-      ];
-
-      String foundPath = '';
-      for (final c in candidates) {
-        if (c.isNotEmpty && await File(c).exists()) {
-          foundPath = c;
-          break;
+    for (final remoteItem in remoteSummary) {
+      final k = _key(remoteItem);
+      final localItem = localMap[k];
+      if (localItem == null) {
+        // هذا السجل عند البعيد فقط، سنضيفه إلى قائمة السجلات التي سنستقبلها
+        // لا نفعل شيئا هنا، بل نضعه في مرحلة لاحقة عندما يطلب البعيد الفرق منا
+      } else {
+        // موجود عندي، نقارن updated_at
+        final remoteTs = remoteItem['updated_at'] as int? ?? 0;
+        final localTs = localItem['updated_at'] as int? ?? 0;
+        if (remoteTs > localTs) {
+          // البعيد لديه نسخة أحدث، سنستقبلها منه
+          // سيتم طلبها من البعيد لاحقاً
+        } else if (localTs > remoteTs) {
+          // المحلي أحدث، نجهز لإرساله
+          missingAtRemote.add(localItem);
+          final img = localItem['image_file_name'] as String?;
+          if (img != null && img.isNotEmpty) {
+            imageNamesToSend.add(img);
+          }
         }
       }
+    }
 
-      if (foundPath.isNotEmpty) {
-        result.add({'name': name, 'path': foundPath});
+    // نضيف السجلات التي عندي ولا توجد في الملخص البعيد إطلاقاً
+    for (final entry in localMap.entries) {
+      final k = entry.key;
+      final localItem = entry.value;
+      final existsInRemote = remoteSummary.any((r) => _key(r) == k);
+      if (!existsInRemote) {
+        missingAtRemote.add(localItem);
+        final img = localItem['image_file_name'] as String?;
+        if (img != null && img.isNotEmpty) imageNamesToSend.add(img);
       }
     }
-    return result;
+
+    return {
+      'records': missingAtRemote,
+      'images': imageNamesToSend.toList(),
+    };
   }
 
-  Future<Set<String>> getLocalImageNames() async {
-    final dbImgs = await getDbImages();
-    return dbImgs.map((e) => e['name']!).toSet();
+  // ─────────────────────────────────────────────────────────
+  // بناء ZIP يحتوي على سجلات وصور محددة
+  // ─────────────────────────────────────────────────────────
+  Future<File> createZipForItems(
+      List<Map<String, dynamic>> records,
+      List<String> imageNames) async {
+    final archive = Archive();
+    // إضافة JSON
+    final jsonStr = jsonEncode({'beneficiaries': records});
+    archive.addFile(ArchiveFile('diff.json', jsonStr.length, utf8.encode(jsonStr)));
+
+    final imgDir = await getImagesDir();
+    for (final name in imageNames) {
+      final file = File(p.join(imgDir.path, name));
+      if (await file.exists()) {
+        final bytes = await file.readAsBytes();
+        archive.addFile(ArchiveFile(name, bytes.length, bytes));
+      }
+    }
+
+    final zipData = ZipEncoder().encode(archive);
+    final tmpDir = await getTemporaryDirectory();
+    final zipFile = File(p.join(tmpDir.path, 'diff_${DateTime.now().millisecondsSinceEpoch}.zip'));
+    await zipFile.writeAsBytes(zipData!);
+    return zipFile;
   }
 
+  // ─────────────────────────────────────────────────────────
+  // فك ZIP وتطبيقه
+  // ─────────────────────────────────────────────────────────
+  Future<Map<String, int>> processReceivedZip(File zipFile) async {
+    final bytes = await zipFile.readAsBytes();
+    final archive = ZipDecoder().decodeBytes(bytes);
+
+    String? jsonContent;
+    int imagesCopied = 0;
+    final imgDir = await getImagesDir();
+
+    for (final file in archive) {
+      if (file.isFile) {
+        if (file.name == 'diff.json') {
+          jsonContent = utf8.decode(file.content);
+        } else if (file.name.endsWith('.jpg') || file.name.endsWith('.jpeg') || file.name.endsWith('.png')) {
+          final targetFile = File(p.join(imgDir.path, file.name));
+          await targetFile.writeAsBytes(file.content);
+          imagesCopied++;
+        }
+      }
+    }
+
+    int added = 0, updated = 0;
+    if (jsonContent != null) {
+      final data = jsonDecode(jsonContent) as Map<String, dynamic>;
+      final records = (data['beneficiaries'] as List).cast<Map<String, dynamic>>();
+      final stats = await mergeRecords(records);
+      added = stats['added'] ?? 0;
+      updated = stats['updated'] ?? 0;
+    }
+
+    return {'added': added, 'updated': updated, 'images': imagesCopied};
+  }
+
+  // ─────────────────────────────────────────────────────────
+  // مجلد الصور الدائم
+  // ─────────────────────────────────────────────────────────
   Future<Directory> getImagesDir() async {
     final docsDir = await getApplicationDocumentsDirectory();
     final imgDir = Directory(p.join(docsDir.path, 'images'));
@@ -135,6 +238,9 @@ class SyncService {
     return imgDir;
   }
 
+  // ─────────────────────────────────────────────────────────
+  // نسخة احتياطية
+  // ─────────────────────────────────────────────────────────
   Future<void> backup() async {
     try {
       final docsDir = await getApplicationDocumentsDirectory();
