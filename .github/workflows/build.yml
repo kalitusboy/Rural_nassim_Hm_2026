@@ -1,7 +1,11 @@
-name: Build Android APK (Manual)
+name: Build Android APK
 
 on:
-  workflow_dispatch: # يسمح بتشغيل البناء يدوياً من واجهة GitHub Actions
+  push:
+    branches: [ v8-final ]
+  pull_request:
+    branches: [ v8-final ]
+  workflow_dispatch:  # يسمح أيضًا بالتشغيل اليدوي
 
 jobs:
   build:
@@ -18,15 +22,16 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          # تم التحديث إلى 3.22.0 لحل مشاكل WidgetStateProperty و Color.a
-          flutter-version: '3.27.0' 
+          flutter-version: '3.22.0'
           channel: 'stable'
 
       - name: Get dependencies
         run: flutter pub get
 
-      - name: Build APK
-        # استخدام split-per-abi لإنتاج ملفات أخف وزناً
+      - name: Static analysis
+        run: flutter analyze
+
+      - name: Build APKs
         run: flutter build apk --release --split-per-abi
 
       - name: Upload ARM64 APK
@@ -46,4 +51,3 @@ jobs:
         with:
           name: Ihsaa-v8-Universal
           path: build/app/outputs/flutter-apk/app-release.apk
-          
