@@ -1,3 +1,4 @@
+
 import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart' as p;
@@ -68,7 +69,7 @@ class SyncServer {
     });
 
     // ── استقبال صورة من عون ───────────────────
-    router.post('/images/<name|[^/]+>', (Request req, String name) async {
+    router.post('/images/<name>', (Request req, String name) async {
       if (!_auth(req, password)) return _err(401, 'غير مصرح');
       try {
         final bytes =
@@ -84,7 +85,7 @@ class SyncServer {
     });
 
     // ── إرسال صورة للعون ──────────────────────
-    router.get('/images/<name|[^/]+>', (Request req, String name) async {
+    router.get('/images/<name>', (Request req, String name) async {
       if (!_auth(req, password)) return _err(401, 'غير مصرح');
       try {
         final dir = await _sync.getImagesDir();
