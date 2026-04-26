@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'sync_service.dart';
+import 'package:path_provider/path_provider.dart';
 
 class SyncResult {
   final bool success;
