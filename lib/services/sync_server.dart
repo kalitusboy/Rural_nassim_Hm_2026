@@ -2,6 +2,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';  // ← مهم جداً
 import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_router/shelf_router.dart';
@@ -26,8 +27,10 @@ class SyncServer {
 
     final router = Router();
 
+    // ── ping ───────────────────────────────────
     router.get('/ping', (Request req) async => _ok({'ok': true}));
 
+    // ── تحقق كلمة المرور ──────────────────────
     router.post('/auth', (Request req) async {
       try {
         final body = jsonDecode(await req.readAsString()) as Map<String, dynamic>;
@@ -38,17 +41,19 @@ class SyncServer {
       }
     });
 
-    // ── Metasync: تبادل الملخصات وإرجاع ZIP بالفروقات ─────────
+    // ── Metasync: استقبال ملخص العون وإرجاع ZIP الفروقات ─────
     router.post('/metasync', (Request req) async {
       if (!_auth(req, password)) return _err(401, 'غير مصرح');
       try {
         final body = jsonDecode(await req.readAsString()) as Map<String, dynamic>;
         final clientSummary = (body['summary'] as List).cast<Map<String, dynamic>>();
 
+        // حساب ما يحتاجه العون من المدير
         final serverDiff = await _sync.compareAndGetMissing(clientSummary);
         final recordsForClient = (serverDiff['records'] as List).cast<Map<String, dynamic>>();
         final imagesForClient = (serverDiff['images'] as List).cast<String>();
 
+        // إنشاء ZIP للعون
         final zipFile = await _sync.createZipForItems(recordsForClient, imagesForClient);
         final zipBytes = await zipFile.readAsBytes();
         await zipFile.delete();
@@ -66,7 +71,7 @@ class SyncServer {
       }
     });
 
-    // ── استقبال حزمة ZIP من العون ومعالجتها ─────
+    // ── استقبال حزمة ZIP من العون ومعالجتها (الاتجاه المعاكس) ────
     router.post('/upload_zip', (Request req) async {
       if (!_auth(req, password)) return _err(401, 'غير مصرح');
       try {
