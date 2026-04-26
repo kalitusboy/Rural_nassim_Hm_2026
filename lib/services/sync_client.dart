@@ -1,3 +1,4 @@
+
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
@@ -59,9 +60,6 @@ class SyncClient {
         'content-type': 'application/json; charset=utf-8',
       };
 
-  // ─────────────────────────────────────────────
-  // اختبار الاتصال
-  // ─────────────────────────────────────────────
   Future<bool> ping() async {
     try {
       final res = await http
@@ -89,18 +87,13 @@ class SyncClient {
     }
   }
 
-  // ─────────────────────────────────────────────
-  // المزامنة الكاملة
-  // ─────────────────────────────────────────────
   Future<SyncResult> sync({void Function(String)? onProgress}) async {
     try {
       onProgress?.call('🔌 جاري الاتصال بالسيرفر...');
       if (!await ping()) {
-        return SyncResult.fail(
-            'تعذر الاتصال بالسيرفر\nتأكد من:\n• أن جهاز المدير مفتوح\n• أن السيرفر يعمل\n• أنك متصل بنفس الـ WiFi');
+        return SyncResult.fail('تعذر الاتصال...');
       }
-
-      onProgress?.call('🔑 جاري التحقق من كلمة المرور...');
+      onProgress?.call('🔑 جاري التحقق...');
       if (!await authenticate()) {
         return SyncResult.fail('كلمة المرور خاطئة');
       }
@@ -108,138 +101,52 @@ class SyncClient {
       onProgress?.call('💾 جاري النسخ الاحتياطي...');
       await _sync.backup();
 
-      // ① رفع صور هذا الجهاز للسيرفر
-      onProgress?.call('🖼️ جاري رفع الصور...');
-      final imgUp = await _uploadImages(onProgress: onProgress);
+      // 1. إعداد ملخصي
+      onProgress?.call('📋 جاري إعداد ملخص البيانات...');
+      final mySummary = await _sync.getSummary();
 
-      // ② رفع السجلات واستقبال الموحّدة
-      onProgress?.call('📤 جاري رفع البيانات...');
-      final localRecords = await _sync.getAllRecords();
-
-      final res = await http
+      // 2. إرسال الملخص إلى السيرفر واستقبال ZIP الفروقات منه
+      onProgress?.call('🔄 جاري تبادل الفروقات...');
+      final response = await http
           .post(
-            Uri.parse('$_base/records'),
+            Uri.parse('$_base/metasync'),
             headers: _headers,
-            body: jsonEncode({'records': localRecords}),
+            body: jsonEncode({'summary': mySummary}),
           )
-          .timeout(const Duration(minutes: 3));
+          .timeout(const Duration(minutes: 5));
 
-      if (res.statusCode != 200) {
-        return SyncResult.fail('خطأ من السيرفر: ${res.statusCode}');
+      if (response.statusCode != 200) {
+        return SyncResult.fail('فشل metasync: ${response.statusCode}');
       }
 
-      onProgress?.call('🔄 جاري دمج البيانات...');
-      final data = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
-      final allRecords =
-          (data['records'] as List).cast<Map<String, dynamic>>();
-      final stats = await _sync.mergeRecords(allRecords);
-
-      // ③ تنزيل صور الأعوان الآخرين
-      onProgress?.call('📥 جاري تنزيل صور الأعوان الآخرين...');
-      final imgDown = await _downloadImages(onProgress: onProgress);
-
-      return SyncResult.ok(
-        added: stats['added'] ?? 0,
-        updated: stats['updated'] ?? 0,
-        imagesUp: imgUp,
-        imagesDown: imgDown,
-      );
-    } on SocketException {
-      return SyncResult.fail('لا يوجد اتصال بالشبكة');
-    } on HttpException {
-      return SyncResult.fail('خطأ في الاتصال بالسيرفر');
-    } catch (e) {
-      return SyncResult.fail('خطأ غير متوقع: $e');
-    }
-  }
-
-  // ─────────────────────────────────────────────
-  // رفع الصور — يقرأ من DB مباشرة (الإصلاح الجذري)
-  // ─────────────────────────────────────────────
-  Future<int> _uploadImages({void Function(String)? onProgress}) async {
-    int up = 0;
-    try {
-      // ① اجلب قائمة أسماء صور السيرفر لتجنب رفع ما هو موجود
-      Set<String> serverNames = {};
-      try {
-        final listRes = await http
-            .get(Uri.parse('$_base/images/list'), headers: _headers)
-            .timeout(const Duration(seconds: 10));
-        if (listRes.statusCode == 200) {
-          serverNames = Set<String>.from(
-              (jsonDecode(listRes.body)['filenames'] as List).cast<String>());
+      // 3. فك ZIP المستلم من المدير (إن وجد)
+      int added = 0, updated = 0, imagesDown = 0;
+      if (response.headers['content-type'] == 'application/zip') {
+        final tmpDir = await getTemporaryDirectory();
+        final receivedZip = File(p.join(tmpDir.path, 'from_server.zip'));
+        await receivedZip.writeAsBytes(response.bodyBytes);
+        final stats = await _sync.processReceivedZip(receivedZip);
+        added = stats['added'] ?? 0;
+        updated = stats['updated'] ?? 0;
+        imagesDown = stats['images'] ?? 0;
+        await receivedZip.delete();
+      } else {
+        // قد يكون الخطأ بصيغة JSON، نحاول قراءته
+        final body = jsonDecode(response.body) as Map<String, dynamic>;
+        if (body['ok'] != true) {
+          return SyncResult.fail(body['error'] ?? 'فشل غير معروف');
         }
-      } catch (_) {}
-
-      // ② الصور المرتبطة بالسجلات في قاعدة البيانات (المصدر الموثوق)
-      final dbImages = await _sync.getDbImages();
-
-      for (final img in dbImages) {
-        final name = img['name']!;
-        final path = img['path']!;
-
-        // تجاوز ما هو موجود على السيرفر
-        if (serverNames.contains(name)) continue;
-
-        final file = File(path);
-        if (!await file.exists()) continue;
-
-        try {
-          onProgress?.call('⬆️ رفع: $name');
-          final bytes = await file.readAsBytes();
-          final res = await http
-              .post(
-                Uri.parse('$_base/images/$name'),
-                headers: {
-                  'x-password': _password,
-                  'content-type': 'application/octet-stream',
-                },
-                body: bytes,
-              )
-              .timeout(const Duration(seconds: 60));
-          if (res.statusCode == 200) up++;
-        } catch (_) {}
       }
-    } catch (_) {}
-    return up;
-  }
 
-  // ─────────────────────────────────────────────
-  // تنزيل الصور الجديدة من السيرفر
-  // ─────────────────────────────────────────────
-  Future<int> _downloadImages({void Function(String)? onProgress}) async {
-    int down = 0;
-    try {
-      // قائمة صور السيرفر
-      final listRes = await http
-          .get(Uri.parse('$_base/images/list'), headers: _headers)
-          .timeout(const Duration(seconds: 10));
-      if (listRes.statusCode != 200) return 0;
-
-      final serverNames = Set<String>.from(
-          (jsonDecode(listRes.body)['filenames'] as List).cast<String>());
-
-      // الصور الموجودة محلياً
-      final localNames = await _sync.getLocalImageNames();
-
-      // الفرق = ما عند السيرفر وليس عندي
-      final toDownload = serverNames.difference(localNames);
-      final imgDir = await _sync.getImagesDir();
-
-      for (final name in toDownload) {
-        try {
-          onProgress?.call('⬇️ تنزيل: $name');
-          final imgRes = await http
-              .get(Uri.parse('$_base/images/$name'), headers: _headers)
-              .timeout(const Duration(seconds: 60));
-          if (imgRes.statusCode == 200) {
-            final file = File(p.join(imgDir.path, name));
-            await file.writeAsBytes(imgRes.bodyBytes);
-            down++;
-          }
-        } catch (_) {}
-      }
-    } catch (_) {}
-    return down;
+      onProgress?.call('✅ تمت المزامنة بنجاح');
+      return SyncResult.ok(
+        added: added,
+        updated: updated,
+        imagesUp: 0, // العون يرسل بياناته في الطلب الأول، لكننا حسبناها كـ imagesDown
+        imagesDown: imagesDown,
+      );
+    } catch (e) {
+      return SyncResult.fail('$e');
+    }
   }
 }
