@@ -98,7 +98,6 @@ class SyncService {
     final rows = await db.query('beneficiaries',
         columns: ['id', 'first_name', 'last_name', 'birth_date', 'address',
                   'updated_at', 'done', 'image_file_name']);
-    // تحويل إلى List<Map> بسيط للإرسال
     return rows.map((r) => {
       'first_name': r['first_name'],
       'last_name': r['last_name'],
@@ -121,34 +120,23 @@ class SyncService {
       localMap[_key(r)] = Map<String, dynamic>.from(r);
     }
 
-    final List<Map<String, dynamic>> missingAtRemote = []; // ما عندي وليس عند البعيد
+    final List<Map<String, dynamic>> missingAtRemote = [];
     final Set<String> imageNamesToSend = {};
 
     for (final remoteItem in remoteSummary) {
       final k = _key(remoteItem);
       final localItem = localMap[k];
-      if (localItem == null) {
-        // هذا السجل عند البعيد فقط، سنضيفه إلى قائمة السجلات التي سنستقبلها
-        // لا نفعل شيئا هنا، بل نضعه في مرحلة لاحقة عندما يطلب البعيد الفرق منا
-      } else {
-        // موجود عندي، نقارن updated_at
-        final remoteTs = remoteItem['updated_at'] as int? ?? 0;
-        final localTs = localItem['updated_at'] as int? ?? 0;
-        if (remoteTs > localTs) {
-          // البعيد لديه نسخة أحدث، سنستقبلها منه
-          // سيتم طلبها من البعيد لاحقاً
-        } else if (localTs > remoteTs) {
-          // المحلي أحدث، نجهز لإرساله
-          missingAtRemote.add(localItem);
-          final img = localItem['image_file_name'] as String?;
-          if (img != null && img.isNotEmpty) {
-            imageNamesToSend.add(img);
-          }
-        }
+      if (localItem == null) continue;
+
+      final remoteTs = remoteItem['updated_at'] as int? ?? 0;
+      final localTs = localItem['updated_at'] as int? ?? 0;
+      if (localTs > remoteTs) {
+        missingAtRemote.add(localItem);
+        final img = localItem['image_file_name'] as String?;
+        if (img != null && img.isNotEmpty) imageNamesToSend.add(img);
       }
     }
 
-    // نضيف السجلات التي عندي ولا توجد في الملخص البعيد إطلاقاً
     for (final entry in localMap.entries) {
       final k = entry.key;
       final localItem = entry.value;
@@ -173,7 +161,6 @@ class SyncService {
       List<Map<String, dynamic>> records,
       List<String> imageNames) async {
     final archive = Archive();
-    // إضافة JSON
     final jsonStr = jsonEncode({'beneficiaries': records});
     archive.addFile(ArchiveFile('diff.json', jsonStr.length, utf8.encode(jsonStr)));
 
@@ -226,6 +213,40 @@ class SyncService {
     }
 
     return {'added': added, 'updated': updated, 'images': imagesCopied};
+  }
+
+  // ─────────────────────────────────────────────────────────
+  // إنشاء حزمة ZIP كاملة (للاستخدام في الرفع الكامل)
+  // ─────────────────────────────────────────────────────────
+  Future<File> createZipPackage() async {
+    final records = await getAllRecords();
+    final jsonStr = jsonEncode({'beneficiaries': records});
+
+    final archive = Archive();
+    archive.addFile(ArchiveFile('data.json', jsonStr.length, utf8.encode(jsonStr)));
+
+    final imgDir = await getImagesDir();
+    final Set<String> addedImages = {};
+    for (final r in records) {
+      final imgName = r['image_file_name'] as String?;
+      if (imgName != null && imgName.isNotEmpty) {
+        addedImages.add(imgName);
+      }
+    }
+
+    for (final name in addedImages) {
+      final file = File(p.join(imgDir.path, name));
+      if (await file.exists()) {
+        final bytes = await file.readAsBytes();
+        archive.addFile(ArchiveFile(name, bytes.length, bytes));
+      }
+    }
+
+    final zipData = ZipEncoder().encode(archive);
+    final tmpDir = await getTemporaryDirectory();
+    final zipFile = File(p.join(tmpDir.path, 'full_${DateTime.now().millisecondsSinceEpoch}.zip'));
+    await zipFile.writeAsBytes(zipData!);
+    return zipFile;
   }
 
   // ─────────────────────────────────────────────────────────
