@@ -1,10 +1,9 @@
-
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';  // ← أُضيفت
 import 'sync_service.dart';
-import 'package:path_provider/path_provider.dart';
 
 class SyncResult {
   final bool success;
@@ -132,7 +131,6 @@ class SyncClient {
         imagesDown = stats['images'] ?? 0;
         await receivedZip.delete();
       } else {
-        // قد يكون الخطأ بصيغة JSON، نحاول قراءته
         final body = jsonDecode(response.body) as Map<String, dynamic>;
         if (body['ok'] != true) {
           return SyncResult.fail(body['error'] ?? 'فشل غير معروف');
@@ -143,7 +141,7 @@ class SyncClient {
       return SyncResult.ok(
         added: added,
         updated: updated,
-        imagesUp: 0, // العون يرسل بياناته في الطلب الأول، لكننا حسبناها كـ imagesDown
+        imagesUp: 0,
         imagesDown: imagesDown,
       );
     } catch (e) {
