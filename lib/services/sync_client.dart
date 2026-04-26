@@ -1,3 +1,4 @@
+
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
@@ -87,61 +88,80 @@ class SyncClient {
     }
   }
 
-  Future<SyncResult> sync({void Function(String)? onProgress}) async {
+  Future<SyncResult> downloadFromServer({void Function(String)? onProgress}) async {
     try {
-      onProgress?.call('🔌 جاري الاتصال بالسيرفر...');
-      if (!await ping()) return SyncResult.fail('تعذر الاتصال...');
+      onProgress?.call('🔌 جاري الاتصال...');
+      if (!await ping()) return SyncResult.fail('تعذر الاتصال');
       onProgress?.call('🔑 جاري التحقق...');
       if (!await authenticate()) return SyncResult.fail('كلمة المرور خاطئة');
-      onProgress?.call('💾 جاري النسخ الاحتياطي...');
-      await _sync.backup();
 
-      // 1. إعداد ملخصي
-      onProgress?.call('📋 جاري إعداد ملخص البيانات...');
+      onProgress?.call('📋 إعداد الملخص...');
       final mySummary = await _sync.getSummary();
 
-      // 2. إرسال الملخص إلى السيرفر واستقبال ZIP الفروقات منه
-      onProgress?.call('🔄 جاري تبادل الفروقات...');
+      onProgress?.call('🔄 استقبال تحديثات المدير...');
       final response = await http.post(
         Uri.parse('$_base/metasync'),
         headers: _headers,
         body: jsonEncode({'summary': mySummary}),
       ).timeout(const Duration(minutes: 5));
 
-      if (response.statusCode != 200) return SyncResult.fail('فشل metasync');
+      if (response.statusCode != 200) return SyncResult.fail('خطأ في metasync');
 
-      int added = 0, updated = 0, imagesDown = 0;
       if (response.headers['content-type'] == 'application/zip') {
         final tmpDir = await getTemporaryDirectory();
         final receivedZip = File(p.join(tmpDir.path, 'from_server.zip'));
         await receivedZip.writeAsBytes(response.bodyBytes);
         final stats = await _sync.processReceivedZip(receivedZip);
-        added = stats['added'] ?? 0;
-        updated = stats['updated'] ?? 0;
-        imagesDown = stats['images'] ?? 0;
         await receivedZip.delete();
+        return SyncResult.ok(
+          added: stats['added'] ?? 0,
+          updated: stats['updated'] ?? 0,
+          imagesUp: 0,
+          imagesDown: stats['images'] ?? 0,
+        );
+      } else {
+        final body = jsonDecode(response.body) as Map<String, dynamic>;
+        if (body['ok'] == true) {
+          return SyncResult.ok(added: 0, updated: 0, imagesUp: 0, imagesDown: 0);
+        }
+        return SyncResult.fail(body['error'] ?? 'فشل');
       }
+    } catch (e) {
+      return SyncResult.fail('$e');
+    }
+  }
 
-      // 3. رفع حزمة العون إلى المدير (الاتجاه المعاكس)
-      onProgress?.call('📤 جاري رفع تحديثاتي إلى المدير...');
-      try {
-        final myZip = await _sync.createZipPackage();
-        await http.post(
-          Uri.parse('$_base/upload_zip'),
-          headers: {
-            'x-password': _password,
-            'content-type': 'application/octet-stream',
-          },
-          body: await myZip.readAsBytes(),
-        ).timeout(const Duration(minutes: 5));
-      } catch (_) {}
+  Future<SyncResult> uploadToServer({void Function(String)? onProgress}) async {
+    try {
+      onProgress?.call('🔌 جاري الاتصال...');
+      if (!await ping()) return SyncResult.fail('تعذر الاتصال');
+      onProgress?.call('🔑 جاري التحقق...');
+      if (!await authenticate()) return SyncResult.fail('كلمة المرور خاطئة');
 
-      onProgress?.call('✅ تمت المزامنة بنجاح');
+      onProgress?.call('📦 تجهيز حزمة الرفع...');
+      final myZip = await _sync.createZipPackage();
+
+      onProgress?.call('⬆️ رفع البيانات والصور...');
+      final res = await http.post(
+        Uri.parse('$_base/upload_zip'),
+        headers: {
+          'x-password': _password,
+          'content-type': 'application/octet-stream',
+        },
+        body: await myZip.readAsBytes(),
+      ).timeout(const Duration(minutes: 5));
+
+      if (res.statusCode != 200) return SyncResult.fail('فشل الرفع');
+
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      if (body['ok'] != true) return SyncResult.fail(body['error'] ?? 'فشل');
+
+      final stats = body['stats'] as Map<String, dynamic>?;
       return SyncResult.ok(
-        added: added,
-        updated: updated,
-        imagesUp: 0,
-        imagesDown: imagesDown,
+        added: 0,
+        updated: 0,
+        imagesUp: stats?['images'] ?? 0,
+        imagesDown: 0,
       );
     } catch (e) {
       return SyncResult.fail('$e');
