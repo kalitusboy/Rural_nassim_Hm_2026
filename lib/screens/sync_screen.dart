@@ -1,3 +1,4 @@
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -47,10 +48,8 @@ class _SyncScreenState extends State<SyncScreen> {
     _client.configure(ip: _adminIp, password: _password);
   }
 
-  // ── رمز QR يحتوي كل ما يحتاجه العون ──────────
   String get _qrData => 'nhsync://$_serverIp:8080?pw=${Uri.encodeComponent(_password)}';
 
-  // ── تشغيل / إيقاف السيرفر ────────────────────
   Future<void> _toggleServer() async {
     if (_serverRunning) {
       await _server.stop();
@@ -74,40 +73,49 @@ class _SyncScreenState extends State<SyncScreen> {
     }
   }
 
-  // ── مزامنة (للأعوان) ──────────────────────────
-  Future<void> _sync() async {
+  // ── تنزيل من المدير ──────────────────────────
+  Future<void> _download() async {
+    setState(() { _syncing = true; _msgType = _MsgType.info; _progress = ''; });
+    final result = await _client.downloadFromServer(
+      onProgress: (msg) => setState(() => _progress = msg),
+    );
     setState(() {
-      _syncing = true;
-      _msgType = _MsgType.info;
-      _progress = '';
-    });
-
-    final result =
-        await _client.sync(onProgress: (msg) => setState(() => _progress = msg));
-
-    if (result.success) {
-      final now = DateTime.now();
-      final ts =
-          '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')} — ${now.day}/${now.month}/${now.year}';
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('last_sync', ts);
-      setState(() {
-        _lastSync = ts;
+      _syncing = false;
+      if (result.success) {
         _msgType = _MsgType.ok;
-        _progress = '✅ تمت المزامنة بنجاح\n'
-            '📋 +${result.added} سجل جديد  |  🔄 ${result.updated} محدَّث\n'
-            '⬆️ ${result.imagesUp} صورة مرفوعة  |  ⬇️ ${result.imagesDown} صورة مستقبلة';
-      });
-    } else {
-      setState(() {
+        _lastSync = _formatNow();
+        _progress = '✅ تنزيل:\n📋 ${result.added} جديد | ${result.updated} محدث\n🖼️ ${result.imagesDown} صورة';
+      } else {
         _msgType = _MsgType.err;
-        _progress = result.error ?? 'فشلت المزامنة';
-      });
-    }
-    setState(() => _syncing = false);
+        _progress = result.error ?? 'فشل التنزيل';
+      }
+    });
   }
 
-  // ── تغيير IP يدوياً للعون ────────────────────
+  // ── رفع إلى المدير ───────────────────────────
+  Future<void> _upload() async {
+    setState(() { _syncing = true; _msgType = _MsgType.info; _progress = ''; });
+    final result = await _client.uploadToServer(
+      onProgress: (msg) => setState(() => _progress = msg),
+    );
+    setState(() {
+      _syncing = false;
+      if (result.success) {
+        _msgType = _MsgType.ok;
+        _lastSync = _formatNow();
+        _progress = '✅ رفع:\n🖼️ ${result.imagesUp} صورة مرفوعة';
+      } else {
+        _msgType = _MsgType.err;
+        _progress = result.error ?? 'فشل الرفع';
+      }
+    });
+  }
+
+  String _formatNow() {
+    final now = DateTime.now();
+    return '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')} — ${now.day}/${now.month}/${now.year}';
+  }
+
   Future<void> _changeIp() async {
     final ctrl = TextEditingController(text: _adminIp);
     final result = await showDialog<String>(
@@ -116,8 +124,7 @@ class _SyncScreenState extends State<SyncScreen> {
         title: const Text('تغيير IP المدير'),
         content: TextField(
           controller: ctrl,
-          keyboardType:
-              const TextInputType.numberWithOptions(decimal: true),
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: const InputDecoration(
             labelText: 'IP',
             hintText: '192.168.43.1',
@@ -125,12 +132,8 @@ class _SyncScreenState extends State<SyncScreen> {
           ),
         ),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('إلغاء')),
-          ElevatedButton(
-              onPressed: () => Navigator.pop(context, ctrl.text.trim()),
-              child: const Text('حفظ')),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('إلغاء')),
+          ElevatedButton(onPressed: () => Navigator.pop(context, ctrl.text.trim()), child: const Text('حفظ')),
         ],
       ),
     );
@@ -142,22 +145,15 @@ class _SyncScreenState extends State<SyncScreen> {
     }
   }
 
-  // ── إعادة الإعداد ────────────────────────────
   Future<void> _resetSetup() async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('إعادة الإعداد'),
-        content: const Text(
-            'سيُمسح إعداد المزامنة فقط.\nبيانات المستفيدين تبقى كما هي.'),
+        content: const Text('سيُمسح إعداد المزامنة فقط.\nبيانات المستفيدين تبقى كما هي.'),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('إلغاء')),
-          TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('إعادة',
-                  style: TextStyle(color: Colors.red))),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('إلغاء')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('إعادة', style: TextStyle(color: Colors.red))),
         ],
       ),
     );
@@ -166,8 +162,7 @@ class _SyncScreenState extends State<SyncScreen> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('setup_done');
     if (!mounted) return;
-    Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const SetupScreen()));
+    Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const SetupScreen()));
   }
 
   @override
@@ -179,16 +174,8 @@ class _SyncScreenState extends State<SyncScreen> {
         title: const Text('المزامنة'),
         actions: [
           if (!isAdmin)
-            IconButton(
-              icon: const Icon(Icons.edit_location_alt_outlined),
-              tooltip: 'تغيير IP',
-              onPressed: _changeIp,
-            ),
-          IconButton(
-            icon: const Icon(Icons.settings_backup_restore),
-            tooltip: 'إعادة الإعداد',
-            onPressed: _resetSetup,
-          ),
+            IconButton(icon: const Icon(Icons.edit_location_alt_outlined), tooltip: 'تغيير IP', onPressed: _changeIp),
+          IconButton(icon: const Icon(Icons.settings_backup_restore), tooltip: 'إعادة الإعداد', onPressed: _resetSetup),
         ],
       ),
       body: SingleChildScrollView(
@@ -196,13 +183,9 @@ class _SyncScreenState extends State<SyncScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // ── شارة الدور ────────────────────
             _RoleBadge(isAdmin: isAdmin),
             const SizedBox(height: 16),
 
-            // ════════════════════════════════════
-            // جهاز المدير
-            // ════════════════════════════════════
             if (isAdmin) ...[
               Card(
                 child: Padding(
@@ -210,48 +193,27 @@ class _SyncScreenState extends State<SyncScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Text('🖥️ السيرفر',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 16)),
+                      const Text('🖥️ السيرفر', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                       const SizedBox(height: 4),
-                      const Text(
-                          'شغّل السيرفر أولاً ثم أعطِ العون رمز QR',
-                          style:
-                              TextStyle(color: Colors.grey, fontSize: 12)),
+                      const Text('شغّل السيرفر أولاً ثم أعطِ العون رمز QR', style: TextStyle(color: Colors.grey, fontSize: 12)),
                       const SizedBox(height: 14),
                       ElevatedButton.icon(
                         onPressed: _toggleServer,
-                        icon: Icon(_serverRunning
-                            ? Icons.stop_circle_outlined
-                            : Icons.play_circle_outlined),
-                        label: Text(_serverRunning
-                            ? 'إيقاف السيرفر'
-                            : 'تشغيل السيرفر'),
+                        icon: Icon(_serverRunning ? Icons.stop_circle_outlined : Icons.play_circle_outlined),
+                        label: Text(_serverRunning ? 'إيقاف السيرفر' : 'تشغيل السيرفر'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: _serverRunning
-                              ? Colors.red.shade700
-                              : const Color(0xFF0D47A1),
-                          padding:
-                              const EdgeInsets.symmetric(vertical: 14),
+                          backgroundColor: _serverRunning ? Colors.red.shade700 : const Color(0xFF0D47A1),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
                         ),
                       ),
 
-                      // QR يظهر فقط عند تشغيل السيرفر
                       if (_serverRunning && _serverIp != null) ...[
                         const SizedBox(height: 20),
                         const Divider(),
                         const SizedBox(height: 12),
-                        const Text('📱 رمز QR للأعوان',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14)),
+                        const Text('📱 رمز QR للأعوان', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                         const SizedBox(height: 4),
-                        const Text(
-                            'وجّه العون كاميرته نحو هذا الرمز مرة واحدة فقط',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                                color: Colors.grey, fontSize: 11)),
+                        const Text('وجّه العون كاميرته نحو هذا الرمز مرة واحدة فقط', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 11)),
                         const SizedBox(height: 12),
                         Center(
                           child: Container(
@@ -259,11 +221,7 @@ class _SyncScreenState extends State<SyncScreen> {
                             decoration: BoxDecoration(
                               color: Colors.white,
                               borderRadius: BorderRadius.circular(12),
-                              boxShadow: [
-                                BoxShadow(
-                                    color: Colors.black12,
-                                    blurRadius: 8)
-                              ],
+                              boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 8)],
                             ),
                             child: QrImageView(
                               data: _qrData,
@@ -274,39 +232,25 @@ class _SyncScreenState extends State<SyncScreen> {
                           ),
                         ),
                         const SizedBox(height: 10),
-                        // عرض الـ IP للكتابة اليدوية كاحتياط
                         GestureDetector(
                           onTap: () {
-                            Clipboard.setData(
-                                ClipboardData(text: _serverIp!));
-                            ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content: Text('تم نسخ الـ IP')));
+                            Clipboard.setData(ClipboardData(text: _serverIp!));
+                            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم نسخ الـ IP')));
                           },
                           child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 8),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                             decoration: BoxDecoration(
                               color: Colors.grey.shade100,
                               borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                  color: Colors.grey.shade300),
+                              border: Border.all(color: Colors.grey.shade300),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
-                              mainAxisAlignment:
-                                  MainAxisAlignment.center,
+                              mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                const Icon(Icons.copy,
-                                    size: 14, color: Colors.grey),
+                                const Icon(Icons.copy, size: 14, color: Colors.grey),
                                 const SizedBox(width: 6),
-                                Text(
-                                  'IP: $_serverIp  —  احتياطي لو فشل QR',
-                                  style: const TextStyle(
-                                      color: Colors.grey,
-                                      fontSize: 12,
-                                      fontFamily: 'monospace'),
-                                ),
+                                Text('IP: $_serverIp  —  احتياطي لو فشل QR', style: const TextStyle(color: Colors.grey, fontSize: 12, fontFamily: 'monospace')),
                               ],
                             ),
                           ),
@@ -318,9 +262,6 @@ class _SyncScreenState extends State<SyncScreen> {
               ),
             ],
 
-            // ════════════════════════════════════
-            // جهاز العون
-            // ════════════════════════════════════
             if (!isAdmin) ...[
               Card(
                 child: Padding(
@@ -328,62 +269,51 @@ class _SyncScreenState extends State<SyncScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const Text('🔄 مزامنة البيانات',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 16)),
+                      const Text('🔄 مزامنة البيانات', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                       const SizedBox(height: 6),
                       Row(children: [
-                        const Icon(Icons.wifi,
-                            size: 14, color: Colors.grey),
+                        const Icon(Icons.wifi, size: 14, color: Colors.grey),
                         const SizedBox(width: 4),
-                        Text('السيرفر: $_adminIp:8080',
-                            style: const TextStyle(
-                                color: Colors.grey,
-                                fontSize: 12,
-                                fontFamily: 'monospace')),
+                        Text('السيرفر: $_adminIp:8080', style: const TextStyle(color: Colors.grey, fontSize: 12, fontFamily: 'monospace')),
                         const Spacer(),
-                        GestureDetector(
-                          onTap: _changeIp,
-                          child: const Text('تعديل',
-                              style: TextStyle(
-                                  color: Color(0xFF0D47A1),
-                                  fontSize: 12,
-                                  decoration: TextDecoration.underline)),
-                        ),
+                        GestureDetector(onTap: _changeIp, child: const Text('تعديل', style: TextStyle(color: Color(0xFF0D47A1), fontSize: 12, decoration: TextDecoration.underline))),
                       ]),
                       const SizedBox(height: 4),
                       Row(children: [
-                        const Icon(Icons.history,
-                            size: 14, color: Colors.grey),
+                        const Icon(Icons.history, size: 14, color: Colors.grey),
                         const SizedBox(width: 4),
-                        Text('آخر مزامنة: $_lastSync',
-                            style: const TextStyle(
-                                color: Colors.grey, fontSize: 12)),
+                        Text('آخر مزامنة: $_lastSync', style: const TextStyle(color: Colors.grey, fontSize: 12)),
                       ]),
                       const SizedBox(height: 12),
-                      const Text(
-                        '• تأكد أنك متصل بـ Hotspot المدير\n'
-                        '• تأكد أن المدير شغّل السيرفر',
-                        style:
-                            TextStyle(fontSize: 12, color: Colors.grey),
-                      ),
+                      const Text('• تأكد أنك متصل بـ Hotspot المدير\n'
+                          '• تأكد أن المدير شغّل السيرفر',
+                          style: TextStyle(fontSize: 12, color: Colors.grey)),
                       const SizedBox(height: 14),
-                      ElevatedButton.icon(
-                        onPressed: _syncing ? null : _sync,
-                        icon: _syncing
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                    color: Colors.white,
-                                    strokeWidth: 2.5))
-                            : const Icon(Icons.sync),
-                        label: Text(_syncing
-                            ? 'جاري المزامنة...'
-                            : '🔄 مزامنة الآن'),
-                        style: ElevatedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(
-                                vertical: 14)),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          ElevatedButton.icon(
+                            onPressed: _syncing ? null : _download,
+                            icon: _syncing
+                                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
+                                : const Icon(Icons.cloud_download),
+                            label: Text(_syncing ? 'جاري...' : '⬇️ تنزيل من المدير'),
+                            style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF0D47A1),
+                                padding: const EdgeInsets.symmetric(vertical: 14)),
+                          ),
+                          const SizedBox(height: 8),
+                          ElevatedButton.icon(
+                            onPressed: _syncing ? null : _upload,
+                            icon: _syncing
+                                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
+                                : const Icon(Icons.cloud_upload),
+                            label: Text(_syncing ? 'جاري...' : '⬆️ رفع إلى المدير'),
+                            style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green.shade700,
+                                padding: const EdgeInsets.symmetric(vertical: 14)),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -391,13 +321,11 @@ class _SyncScreenState extends State<SyncScreen> {
               ),
             ],
 
-            // ── رسالة الحالة ──────────────────
             if (_progress.isNotEmpty) ...[
               const SizedBox(height: 14),
               _StatusBox(message: _progress, type: _msgType),
             ],
 
-            // ── تذكير بالقواعد ────────────────
             const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.all(12),
@@ -421,10 +349,6 @@ class _SyncScreenState extends State<SyncScreen> {
   }
 }
 
-// ─────────────────────────────────────────────
-// Widgets مساعدة
-// ─────────────────────────────────────────────
-
 class _RoleBadge extends StatelessWidget {
   final bool isAdmin;
   const _RoleBadge({required this.isAdmin});
@@ -438,17 +362,9 @@ class _RoleBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(children: [
-        Icon(
-            isAdmin
-                ? Icons.admin_panel_settings
-                : Icons.person_pin_rounded,
-            color: Colors.white),
+        Icon(isAdmin ? Icons.admin_panel_settings : Icons.person_pin_rounded, color: Colors.white),
         const SizedBox(width: 8),
-        Text(isAdmin ? 'جهاز المدير' : 'جهاز العون',
-            style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 15)),
+        Text(isAdmin ? 'جهاز المدير' : 'جهاز العون', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
       ]),
     );
   }
@@ -478,9 +394,7 @@ class _StatusBox extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: c[1]),
       ),
-      child: Text(message,
-          textAlign: TextAlign.center,
-          style: const TextStyle(height: 1.6)),
+      child: Text(message, textAlign: TextAlign.center, style: const TextStyle(height: 1.6)),
     );
   }
 }
