@@ -13,9 +13,6 @@ class SyncService {
 
   final _db = DatabaseService();
 
-  // ─────────────────────────────────────────────────────────
-  // مفتاح التعرف على السجل
-  // ─────────────────────────────────────────────────────────
   static String _key(Map<String, dynamic> r) {
     final fn = (r['first_name'] ?? '').toString().trim().toLowerCase();
     final ln = (r['last_name'] ?? '').toString().trim().toLowerCase();
@@ -24,9 +21,6 @@ class SyncService {
     return '$fn|$ln|$bd|$ad';
   }
 
-  // ─────────────────────────────────────────────────────────
-  // قاعدة حل التعارض
-  // ─────────────────────────────────────────────────────────
   static Map<String, dynamic> _resolve(
     Map<String, dynamic> local,
     Map<String, dynamic> remote,
@@ -42,9 +36,6 @@ class SyncService {
     return {...winner, 'id': local['id']};
   }
 
-  // ─────────────────────────────────────────────────────────
-  // دمج السجلات الواردة في قاعدة البيانات المحلية
-  // ─────────────────────────────────────────────────────────
   Future<Map<String, int>> mergeRecords(
       List<Map<String, dynamic>> incoming) async {
     final db = await _db.database;
@@ -82,17 +73,11 @@ class SyncService {
     return {'added': added, 'updated': updated};
   }
 
-  // ─────────────────────────────────────────────────────────
-  // إرجاع جميع السجلات كـ List<Map>
-  // ─────────────────────────────────────────────────────────
   Future<List<Map<String, dynamic>>> getAllRecords() async {
     final db = await _db.database;
     return db.query('beneficiaries');
   }
 
-  // ─────────────────────────────────────────────────────────
-  // إنشاء ملخص (ملف JSON صغير) للمقارنة
-  // ─────────────────────────────────────────────────────────
   Future<List<Map<String, dynamic>>> getSummary() async {
     final db = await _db.database;
     final rows = await db.query('beneficiaries',
@@ -109,9 +94,6 @@ class SyncService {
     }).toList();
   }
 
-  // ─────────────────────────────────────────────────────────
-  // المقارنة وإرجاع السجلات المفقودة / الأحدث عندي
-  // ─────────────────────────────────────────────────────────
   Future<Map<String, dynamic>> compareAndGetMissing(
       List<Map<String, dynamic>> remoteSummary) async {
     final localRecords = await getAllRecords();
@@ -123,28 +105,29 @@ class SyncService {
     final List<Map<String, dynamic>> missingAtRemote = [];
     final Set<String> imageNamesToSend = {};
 
-    for (final remoteItem in remoteSummary) {
-      final k = _key(remoteItem);
-      final localItem = localMap[k];
-      if (localItem == null) continue;
-
-      final remoteTs = remoteItem['updated_at'] as int? ?? 0;
-      final localTs = localItem['updated_at'] as int? ?? 0;
-      if (localTs > remoteTs) {
-        missingAtRemote.add(localItem);
-        final img = localItem['image_file_name'] as String?;
-        if (img != null && img.isNotEmpty) imageNamesToSend.add(img);
-      }
-    }
-
+    // سجلات موجودة عندي ومفقودة أو أحدث من البعيد
     for (final entry in localMap.entries) {
       final k = entry.key;
       final localItem = entry.value;
-      final existsInRemote = remoteSummary.any((r) => _key(r) == k);
-      if (!existsInRemote) {
+      final remoteItem = remoteSummary.firstWhere(
+        (r) => _key(r) == k,
+        orElse: () => <String, dynamic>{},
+      );
+
+      if (remoteItem.isEmpty) {
+        // غير موجودة عند البعيد أبداً
         missingAtRemote.add(localItem);
         final img = localItem['image_file_name'] as String?;
         if (img != null && img.isNotEmpty) imageNamesToSend.add(img);
+      } else {
+        final remoteTs = remoteItem['updated_at'] as int? ?? 0;
+        final localTs = localItem['updated_at'] as int? ?? 0;
+        if (localTs > remoteTs) {
+          // المحلي أحدث، نرسله
+          missingAtRemote.add(localItem);
+          final img = localItem['image_file_name'] as String?;
+          if (img != null && img.isNotEmpty) imageNamesToSend.add(img);
+        }
       }
     }
 
@@ -154,9 +137,6 @@ class SyncService {
     };
   }
 
-  // ─────────────────────────────────────────────────────────
-  // بناء ZIP يحتوي على سجلات وصور محددة
-  // ─────────────────────────────────────────────────────────
   Future<File> createZipForItems(
       List<Map<String, dynamic>> records,
       List<String> imageNames) async {
@@ -180,9 +160,35 @@ class SyncService {
     return zipFile;
   }
 
-  // ─────────────────────────────────────────────────────────
-  // فك ZIP وتطبيقه
-  // ─────────────────────────────────────────────────────────
+  Future<File> createZipPackage() async {
+    final records = await getAllRecords();
+    final jsonStr = jsonEncode({'beneficiaries': records});
+
+    final archive = Archive();
+    archive.addFile(ArchiveFile('data.json', jsonStr.length, utf8.encode(jsonStr)));
+
+    final imgDir = await getImagesDir();
+    final Set<String> addedImages = {};
+    for (final r in records) {
+      final imgName = r['image_file_name'] as String?;
+      if (imgName != null && imgName.isNotEmpty) addedImages.add(imgName);
+    }
+
+    for (final name in addedImages) {
+      final file = File(p.join(imgDir.path, name));
+      if (await file.exists()) {
+        final bytes = await file.readAsBytes();
+        archive.addFile(ArchiveFile(name, bytes.length, bytes));
+      }
+    }
+
+    final zipData = ZipEncoder().encode(archive);
+    final tmpDir = await getTemporaryDirectory();
+    final zipFile = File(p.join(tmpDir.path, 'full_${DateTime.now().millisecondsSinceEpoch}.zip'));
+    await zipFile.writeAsBytes(zipData!);
+    return zipFile;
+  }
+
   Future<Map<String, int>> processReceivedZip(File zipFile) async {
     final bytes = await zipFile.readAsBytes();
     final archive = ZipDecoder().decodeBytes(bytes);
@@ -193,7 +199,7 @@ class SyncService {
 
     for (final file in archive) {
       if (file.isFile) {
-        if (file.name == 'diff.json') {
+        if (file.name == 'data.json' || file.name == 'diff.json') {
           jsonContent = utf8.decode(file.content);
         } else if (file.name.endsWith('.jpg') || file.name.endsWith('.jpeg') || file.name.endsWith('.png')) {
           final targetFile = File(p.join(imgDir.path, file.name));
@@ -215,43 +221,6 @@ class SyncService {
     return {'added': added, 'updated': updated, 'images': imagesCopied};
   }
 
-  // ─────────────────────────────────────────────────────────
-  // إنشاء حزمة ZIP كاملة (للاستخدام في الرفع الكامل)
-  // ─────────────────────────────────────────────────────────
-  Future<File> createZipPackage() async {
-    final records = await getAllRecords();
-    final jsonStr = jsonEncode({'beneficiaries': records});
-
-    final archive = Archive();
-    archive.addFile(ArchiveFile('data.json', jsonStr.length, utf8.encode(jsonStr)));
-
-    final imgDir = await getImagesDir();
-    final Set<String> addedImages = {};
-    for (final r in records) {
-      final imgName = r['image_file_name'] as String?;
-      if (imgName != null && imgName.isNotEmpty) {
-        addedImages.add(imgName);
-      }
-    }
-
-    for (final name in addedImages) {
-      final file = File(p.join(imgDir.path, name));
-      if (await file.exists()) {
-        final bytes = await file.readAsBytes();
-        archive.addFile(ArchiveFile(name, bytes.length, bytes));
-      }
-    }
-
-    final zipData = ZipEncoder().encode(archive);
-    final tmpDir = await getTemporaryDirectory();
-    final zipFile = File(p.join(tmpDir.path, 'full_${DateTime.now().millisecondsSinceEpoch}.zip'));
-    await zipFile.writeAsBytes(zipData!);
-    return zipFile;
-  }
-
-  // ─────────────────────────────────────────────────────────
-  // مجلد الصور الدائم
-  // ─────────────────────────────────────────────────────────
   Future<Directory> getImagesDir() async {
     final docsDir = await getApplicationDocumentsDirectory();
     final imgDir = Directory(p.join(docsDir.path, 'images'));
@@ -259,9 +228,6 @@ class SyncService {
     return imgDir;
   }
 
-  // ─────────────────────────────────────────────────────────
-  // نسخة احتياطية
-  // ─────────────────────────────────────────────────────────
   Future<void> backup() async {
     try {
       final docsDir = await getApplicationDocumentsDirectory();
