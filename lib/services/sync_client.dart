@@ -102,9 +102,11 @@ class SyncClient {
       onProgress?.call('💾 جاري النسخ الاحتياطي...');
       await _sync.backup();
 
-      // 1. إرسال الملخص واستقبال تحديثات المدير
+      // 1. إعداد ملخصي
       onProgress?.call('📋 جاري إعداد ملخص البيانات...');
       final mySummary = await _sync.getSummary();
+
+      // 2. إرسال الملخص إلى السيرفر واستقبال ZIP الفروقات منه
       onProgress?.call('🔄 جاري تبادل الفروقات...');
       final response = await http
           .post(
@@ -118,7 +120,7 @@ class SyncClient {
         return SyncResult.fail('فشل metasync: ${response.statusCode}');
       }
 
-      // 2. فك ZIP المستلم من المدير
+      // 3. فك ZIP المستلم من المدير (إن وجد)
       int added = 0, updated = 0, imagesDown = 0;
       if (response.headers['content-type'] == 'application/zip') {
         final tmpDir = await getTemporaryDirectory();
@@ -136,7 +138,7 @@ class SyncClient {
         }
       }
 
-      // 3. رفع حزمة العون إلى المدير (الاتجاه المعاكس)
+      // 4. رفع حزمة العون إلى المدير (الاتجاه المعاكس)
       onProgress?.call('📤 جاري رفع تحديثاتي إلى المدير...');
       try {
         final myZip = await _sync.createZipPackage();
@@ -151,7 +153,7 @@ class SyncClient {
             )
             .timeout(const Duration(minutes: 5));
       } catch (_) {
-        // إذا فشل الرفع لا نوقف المزامنة، يمكن إعلام المستخدم في الإصدارات المستقبلية
+        // فشل صامت – لن يوقف المزامنة
       }
 
       onProgress?.call('✅ تمت المزامنة بنجاح');
