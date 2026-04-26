@@ -2,7 +2,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';  // ← مهم جداً
+import 'package:path_provider/path_provider.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_router/shelf_router.dart';
@@ -15,7 +15,6 @@ class SyncServer {
 
   HttpServer? _server;
   final _sync = SyncService();
-
   static const int port = 8080;
 
   bool get isRunning => _server != null;
@@ -27,10 +26,8 @@ class SyncServer {
 
     final router = Router();
 
-    // ── ping ───────────────────────────────────
     router.get('/ping', (Request req) async => _ok({'ok': true}));
 
-    // ── تحقق كلمة المرور ──────────────────────
     router.post('/auth', (Request req) async {
       try {
         final body = jsonDecode(await req.readAsString()) as Map<String, dynamic>;
@@ -41,37 +38,23 @@ class SyncServer {
       }
     });
 
-    // ── Metasync: استقبال ملخص العون وإرجاع ZIP الفروقات ─────
     router.post('/metasync', (Request req) async {
       if (!_auth(req, password)) return _err(401, 'غير مصرح');
       try {
         final body = jsonDecode(await req.readAsString()) as Map<String, dynamic>;
         final clientSummary = (body['summary'] as List).cast<Map<String, dynamic>>();
-
-        // حساب ما يحتاجه العون من المدير
         final serverDiff = await _sync.compareAndGetMissing(clientSummary);
         final recordsForClient = (serverDiff['records'] as List).cast<Map<String, dynamic>>();
         final imagesForClient = (serverDiff['images'] as List).cast<String>();
-
-        // إنشاء ZIP للعون
         final zipFile = await _sync.createZipForItems(recordsForClient, imagesForClient);
         final zipBytes = await zipFile.readAsBytes();
         await zipFile.delete();
-
-        return Response.ok(zipBytes,
-            headers: {
-              'content-type': 'application/zip',
-              'x-sync-stats': jsonEncode({
-                'records': recordsForClient.length,
-                'images': imagesForClient.length
-              })
-            });
+        return Response.ok(zipBytes, headers: {'content-type': 'application/zip'});
       } catch (e) {
         return _err(500, 'فشل metasync: $e');
       }
     });
 
-    // ── استقبال حزمة ZIP من العون ومعالجتها (الاتجاه المعاكس) ────
     router.post('/upload_zip', (Request req) async {
       if (!_auth(req, password)) return _err(401, 'غير مصرح');
       try {
@@ -126,6 +109,6 @@ class SyncServer {
         }
       }
     } catch (_) {}
-    return '10.165.172.211';
+    return '192.168.43.1';
   }
 }
