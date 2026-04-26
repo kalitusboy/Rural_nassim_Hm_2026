@@ -1,3 +1,4 @@
+
 import 'dart:convert';
 import 'dart:io';
 import 'package:path/path.dart' as p;
@@ -41,23 +42,15 @@ class SyncServer {
     router.post('/metasync', (Request req) async {
       if (!_auth(req, password)) return _err(401, 'غير مصرح');
       try {
-        // استقبال ملخص العون
         final body = jsonDecode(await req.readAsString()) as Map<String, dynamic>;
         final clientSummary = (body['summary'] as List).cast<Map<String, dynamic>>();
 
-        // 1. العون يجهز الفرق الذي سيرسله (السجلات والصور الناقصة عندي)
-        // لكننا هنا على السيرفر، لذا سنحاكي دور العون باستخدام ملخصه
-        // نستدعي دالة خاصة تعمل على السيرفر: "ما الذي عندي ويحتاجه العون؟"
         final serverDiff = await _sync.compareAndGetMissing(clientSummary);
         final recordsForClient = (serverDiff['records'] as List).cast<Map<String, dynamic>>();
         final imagesForClient = (serverDiff['images'] as List).cast<String>();
 
-        // 2. إنشاء ZIP للعون
         final zipFile = await _sync.createZipForItems(recordsForClient, imagesForClient);
-
-        // 3. إرسال ZIP مباشرة مع الإحصائيات
         final zipBytes = await zipFile.readAsBytes();
-        // تنظيف الملف المؤقت
         await zipFile.delete();
 
         return Response.ok(zipBytes,
@@ -70,6 +63,23 @@ class SyncServer {
             });
       } catch (e) {
         return _err(500, 'فشل metasync: $e');
+      }
+    });
+
+    // ── استقبال حزمة ZIP من العون ومعالجتها ─────
+    router.post('/upload_zip', (Request req) async {
+      if (!_auth(req, password)) return _err(401, 'غير مصرح');
+      try {
+        final bytes = await req.read().fold<List<int>>(<int>[], (a, b) => a..addAll(b));
+        if (bytes.isEmpty) return _err(400, 'الملف فارغ');
+        final tmpDir = await getTemporaryDirectory();
+        final tmpFile = File(p.join(tmpDir.path, 'upload_${DateTime.now().millisecondsSinceEpoch}.zip'));
+        await tmpFile.writeAsBytes(bytes);
+        final stats = await _sync.processReceivedZip(tmpFile);
+        await tmpFile.delete();
+        return _ok({'ok': true, 'stats': stats});
+      } catch (e) {
+        return _err(500, 'فشل معالجة الرفع: $e');
       }
     });
 
