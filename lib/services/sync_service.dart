@@ -29,26 +29,21 @@ class SyncService {
     final remoteDone = remote['done'] as int? ?? 0;
     if (localDone == 1 && remoteDone == 0) return {...local, 'id': local['id']};
     if (remoteDone == 1 && localDone == 0) return {...remote, 'id': local['id']};
-
     final localTs = local['updated_at'] as int? ?? 0;
     final remoteTs = remote['updated_at'] as int? ?? 0;
     final winner = remoteTs > localTs ? remote : local;
     return {...winner, 'id': local['id']};
   }
 
-  Future<Map<String, int>> mergeRecords(
-      List<Map<String, dynamic>> incoming) async {
+  Future<Map<String, int>> mergeRecords(List<Map<String, dynamic>> incoming) async {
     final db = await _db.database;
     int added = 0, updated = 0;
-
     final localList = await db.query('beneficiaries');
     final Map<String, Map<String, dynamic>> localMap = {};
     for (final r in localList) {
       localMap[_key(r)] = Map<String, dynamic>.from(r);
     }
-
     final imgDir = await getImagesDir();
-
     for (final remote in incoming) {
       final k = _key(remote);
       if (!localMap.containsKey(k)) {
@@ -65,8 +60,7 @@ class SyncService {
         }
         final id = merged['id'];
         final toUpdate = Map<String, dynamic>.from(merged)..remove('id');
-        await db.update('beneficiaries', toUpdate,
-            where: 'id = ?', whereArgs: [id]);
+        await db.update('beneficiaries', toUpdate, where: 'id = ?', whereArgs: [id]);
         updated++;
       }
     }
@@ -94,18 +88,14 @@ class SyncService {
     }).toList();
   }
 
-  Future<Map<String, dynamic>> compareAndGetMissing(
-      List<Map<String, dynamic>> remoteSummary) async {
+  Future<Map<String, dynamic>> compareAndGetMissing(List<Map<String, dynamic>> remoteSummary) async {
     final localRecords = await getAllRecords();
     final Map<String, Map<String, dynamic>> localMap = {};
     for (final r in localRecords) {
       localMap[_key(r)] = Map<String, dynamic>.from(r);
     }
-
     final List<Map<String, dynamic>> missingAtRemote = [];
     final Set<String> imageNamesToSend = {};
-
-    // سجلات موجودة عندي ومفقودة أو أحدث من البعيد
     for (final entry in localMap.entries) {
       final k = entry.key;
       final localItem = entry.value;
@@ -113,9 +103,7 @@ class SyncService {
         (r) => _key(r) == k,
         orElse: () => <String, dynamic>{},
       );
-
       if (remoteItem.isEmpty) {
-        // غير موجودة عند البعيد أبداً
         missingAtRemote.add(localItem);
         final img = localItem['image_file_name'] as String?;
         if (img != null && img.isNotEmpty) imageNamesToSend.add(img);
@@ -123,36 +111,36 @@ class SyncService {
         final remoteTs = remoteItem['updated_at'] as int? ?? 0;
         final localTs = localItem['updated_at'] as int? ?? 0;
         if (localTs > remoteTs) {
-          // المحلي أحدث، نرسله
           missingAtRemote.add(localItem);
           final img = localItem['image_file_name'] as String?;
           if (img != null && img.isNotEmpty) imageNamesToSend.add(img);
         }
       }
     }
-
-    return {
-      'records': missingAtRemote,
-      'images': imageNamesToSend.toList(),
-    };
+    return {'records': missingAtRemote, 'images': imageNamesToSend.toList()};
   }
 
-  Future<File> createZipForItems(
-      List<Map<String, dynamic>> records,
-      List<String> imageNames) async {
+  Future<File> createZipForItems(List<Map<String, dynamic>> records, List<String> imageNames) async {
     final archive = Archive();
     final jsonStr = jsonEncode({'beneficiaries': records});
     archive.addFile(ArchiveFile('diff.json', jsonStr.length, utf8.encode(jsonStr)));
-
     final imgDir = await getImagesDir();
     for (final name in imageNames) {
-      final file = File(p.join(imgDir.path, name));
+      // حاول تحميل الصورة باسمها المحدد، أو ابحث عن أي ملف بنفس الاسم الأساسي
+      File file = File(p.join(imgDir.path, name));
+      if (!await file.exists()) {
+        final baseName = p.basenameWithoutExtension(name);
+        final found = imgDir.listSync().firstWhere(
+          (f) => f is File && p.basenameWithoutExtension(f.path) == baseName,
+          orElse: () => null,
+        );
+        if (found != null) file = found as File;
+      }
       if (await file.exists()) {
         final bytes = await file.readAsBytes();
-        archive.addFile(ArchiveFile(name, bytes.length, bytes));
+        archive.addFile(ArchiveFile(p.basename(file.path), bytes.length, bytes));
       }
     }
-
     final zipData = ZipEncoder().encode(archive);
     final tmpDir = await getTemporaryDirectory();
     final zipFile = File(p.join(tmpDir.path, 'diff_${DateTime.now().millisecondsSinceEpoch}.zip'));
@@ -163,22 +151,43 @@ class SyncService {
   Future<File> createZipPackage() async {
     final records = await getAllRecords();
     final jsonStr = jsonEncode({'beneficiaries': records});
-
     final archive = Archive();
     archive.addFile(ArchiveFile('data.json', jsonStr.length, utf8.encode(jsonStr)));
 
     final imgDir = await getImagesDir();
+    // قائمة بجميع ملفات الصور الفعلية
+    final existingFiles = <String>[];
+    await for (final entity in imgDir.list()) {
+      if (entity is File) {
+        final name = p.basename(entity.path);
+        if (name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.png')) {
+          existingFiles.add(name);
+        }
+      }
+    }
+
     final Set<String> addedImages = {};
     for (final r in records) {
       final imgName = r['image_file_name'] as String?;
-      if (imgName != null && imgName.isNotEmpty) addedImages.add(imgName);
-    }
-
-    for (final name in addedImages) {
-      final file = File(p.join(imgDir.path, name));
-      if (await file.exists()) {
-        final bytes = await file.readAsBytes();
-        archive.addFile(ArchiveFile(name, bytes.length, bytes));
+      if (imgName == null || imgName.isEmpty) continue;
+      String? matchedFile;
+      if (existingFiles.contains(imgName)) {
+        matchedFile = imgName;
+      } else {
+        final baseName = p.basenameWithoutExtension(imgName);
+        matchedFile = existingFiles.firstWhere(
+          (f) => p.basenameWithoutExtension(f) == baseName,
+          orElse: () => '',
+        );
+        if (matchedFile!.isEmpty) matchedFile = null;
+      }
+      if (matchedFile != null) {
+        final file = File(p.join(imgDir.path, matchedFile));
+        if (await file.exists()) {
+          final bytes = await file.readAsBytes();
+          archive.addFile(ArchiveFile(matchedFile, bytes.length, bytes));
+          addedImages.add(matchedFile);
+        }
       }
     }
 
@@ -192,7 +201,6 @@ class SyncService {
   Future<Map<String, int>> processReceivedZip(File zipFile) async {
     final bytes = await zipFile.readAsBytes();
     final archive = ZipDecoder().decodeBytes(bytes);
-
     String? jsonContent;
     int imagesCopied = 0;
     final imgDir = await getImagesDir();
@@ -213,6 +221,25 @@ class SyncService {
     if (jsonContent != null) {
       final data = jsonDecode(jsonContent) as Map<String, dynamic>;
       final records = (data['beneficiaries'] as List).cast<Map<String, dynamic>>();
+
+      // تصحيح image_file_name في السجلات إذا لم تتطابق مع الملفات الموجودة
+      for (final rec in records) {
+        final imgName = rec['image_file_name'] as String?;
+        if (imgName != null && imgName.isNotEmpty) {
+          final candidate = File(p.join(imgDir.path, imgName));
+          if (!await candidate.exists()) {
+            final baseName = p.basenameWithoutExtension(imgName);
+            final found = imgDir.listSync().firstWhere(
+              (f) => f is File && p.basenameWithoutExtension(f.path) == baseName,
+              orElse: () => null,
+            );
+            if (found != null) {
+              rec['image_file_name'] = p.basename(found.path);
+            }
+          }
+        }
+      }
+
       final stats = await mergeRecords(records);
       added = stats['added'] ?? 0;
       updated = stats['updated'] ?? 0;
@@ -234,10 +261,7 @@ class SyncService {
       for (final dbName in ['ihsa_2026.db', 'rural_nassim.db', 'beneficiaries.db']) {
         final src = File(p.join(docsDir.path, dbName));
         if (await src.exists()) {
-          final ts = DateTime.now()
-              .toIso8601String()
-              .replaceAll(':', '-')
-              .substring(0, 19);
+          final ts = DateTime.now().toIso8601String().replaceAll(':', '-').substring(0, 19);
           await src.copy(p.join(docsDir.path, 'backup_$ts.db'));
           break;
         }
