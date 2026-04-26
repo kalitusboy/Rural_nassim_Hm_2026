@@ -126,6 +126,6 @@ class SyncServer {
         }
       }
     } catch (_) {}
-    return '192.168.43.1';
+    return '10.165.172.211';
   }
 }
