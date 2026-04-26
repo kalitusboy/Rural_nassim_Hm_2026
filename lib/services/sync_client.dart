@@ -1,4 +1,3 @@
-
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
@@ -91,14 +90,9 @@ class SyncClient {
   Future<SyncResult> sync({void Function(String)? onProgress}) async {
     try {
       onProgress?.call('🔌 جاري الاتصال بالسيرفر...');
-      if (!await ping()) {
-        return SyncResult.fail('تعذر الاتصال...');
-      }
+      if (!await ping()) return SyncResult.fail('تعذر الاتصال...');
       onProgress?.call('🔑 جاري التحقق...');
-      if (!await authenticate()) {
-        return SyncResult.fail('كلمة المرور خاطئة');
-      }
-
+      if (!await authenticate()) return SyncResult.fail('كلمة المرور خاطئة');
       onProgress?.call('💾 جاري النسخ الاحتياطي...');
       await _sync.backup();
 
@@ -108,19 +102,14 @@ class SyncClient {
 
       // 2. إرسال الملخص إلى السيرفر واستقبال ZIP الفروقات منه
       onProgress?.call('🔄 جاري تبادل الفروقات...');
-      final response = await http
-          .post(
-            Uri.parse('$_base/metasync'),
-            headers: _headers,
-            body: jsonEncode({'summary': mySummary}),
-          )
-          .timeout(const Duration(minutes: 5));
+      final response = await http.post(
+        Uri.parse('$_base/metasync'),
+        headers: _headers,
+        body: jsonEncode({'summary': mySummary}),
+      ).timeout(const Duration(minutes: 5));
 
-      if (response.statusCode != 200) {
-        return SyncResult.fail('فشل metasync: ${response.statusCode}');
-      }
+      if (response.statusCode != 200) return SyncResult.fail('فشل metasync');
 
-      // 3. فك ZIP المستلم من المدير (إن وجد)
       int added = 0, updated = 0, imagesDown = 0;
       if (response.headers['content-type'] == 'application/zip') {
         final tmpDir = await getTemporaryDirectory();
@@ -131,30 +120,21 @@ class SyncClient {
         updated = stats['updated'] ?? 0;
         imagesDown = stats['images'] ?? 0;
         await receivedZip.delete();
-      } else {
-        final body = jsonDecode(response.body) as Map<String, dynamic>;
-        if (body['ok'] != true) {
-          return SyncResult.fail(body['error'] ?? 'فشل غير معروف');
-        }
       }
 
-      // 4. رفع حزمة العون إلى المدير (الاتجاه المعاكس)
+      // 3. رفع حزمة العون إلى المدير (الاتجاه المعاكس)
       onProgress?.call('📤 جاري رفع تحديثاتي إلى المدير...');
       try {
         final myZip = await _sync.createZipPackage();
-        await http
-            .post(
-              Uri.parse('$_base/upload_zip'),
-              headers: {
-                'x-password': _password,
-                'content-type': 'application/octet-stream',
-              },
-              body: await myZip.readAsBytes(),
-            )
-            .timeout(const Duration(minutes: 5));
-      } catch (_) {
-        // فشل صامت – لن يوقف المزامنة
-      }
+        await http.post(
+          Uri.parse('$_base/upload_zip'),
+          headers: {
+            'x-password': _password,
+            'content-type': 'application/octet-stream',
+          },
+          body: await myZip.readAsBytes(),
+        ).timeout(const Duration(minutes: 5));
+      } catch (_) {}
 
       onProgress?.call('✅ تمت المزامنة بنجاح');
       return SyncResult.ok(
