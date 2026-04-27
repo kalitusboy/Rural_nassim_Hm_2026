@@ -1,0 +1,90 @@
+name: Build APK — إحصاء نسيم 2026 v8
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Release APK
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. الكود ───────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Java 17 (إلزامي مع AGP 8 + Kotlin 2) ──
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # ── 3. Flutter 3.27.x (Dart 3.6) ───────────
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.27.4'
+          channel: stable
+          cache: true
+
+      # ── 4. معلومات البيئة ──────────────────────
+      - name: Environment info
+        run: |
+          flutter --version
+          dart --version
+          java -version
+          echo "Gradle wrapper: $(cat android/gradle/wrapper/gradle-wrapper.properties | grep distributionUrl)"
+
+      # ── 5. تثبيت المكتبات ──────────────────────
+      - name: Flutter pub get
+        run: flutter pub get
+
+      # ── 6. تحقق من التعارضات ───────────────────
+      - name: Check dependency conflicts
+        run: flutter pub deps --no-dev | head -50
+
+      # ── 7. تحليل الكود ─────────────────────────
+      - name: Analyze
+        run: flutter analyze --no-fatal-warnings || true
+
+      # ── 8. بناء APK ────────────────────────────
+      - name: Build release APK
+        run: |
+          flutter build apk \
+            --release \
+            --split-per-abi \
+            --target-platform android-arm64 \
+            --no-tree-shake-icons \
+            --dart-define=FLUTTER_TARGET=android
+
+      # ── 9. معلومات الناتج ──────────────────────
+      - name: APK info
+        run: |
+          echo "══════════════════════════════════"
+          echo "✅ APK built successfully"
+          ls -lh build/app/outputs/flutter-apk/*.apk
+          echo "══════════════════════════════════"
+          echo "App ID  : com.ihsa.nassim2026_v8"
+          echo "Flutter : 3.27.4 (Dart 3.6)"
+          echo "Gradle  : 8.10.2"
+          echo "AGP     : 8.7.2"
+          echo "Kotlin  : 2.0.21"
+          echo "Java    : 17"
+          echo "minSdk  : 23"
+          echo "targetSdk: 35"
+          echo "compileSdk: 35"
+
+      # ── 10. رفع الـ APK ────────────────────────
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ihsaa-Nassim-v8-${{ github.run_number }}
+          path: |
+            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          retention-days: 30
+          if-no-files-found: error
