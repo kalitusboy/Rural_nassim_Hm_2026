@@ -1,0 +1,81 @@
+// ── Flutter local properties ──────────────────────────────────────────────
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file('local.properties')
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withReader('UTF-8') { reader -> localProperties.load(reader) }
+}
+
+def flutterRoot = localProperties.getProperty('flutter.sdk')
+if (flutterRoot == null) {
+    throw new GradleException("Flutter SDK not found. Define location with flutter.sdk in local.properties")
+}
+
+def flutterVersionCode = localProperties.getProperty('flutter.versionCode') ?: '1'
+def flutterVersionName = localProperties.getProperty('flutter.versionName') ?: '1.0'
+
+// ── Plugins ───────────────────────────────────────────────────────────────
+apply plugin: 'com.android.application'
+apply plugin: 'kotlin-android'
+apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
+
+// ── Android config ────────────────────────────────────────────────────────
+android {
+    namespace "com.ihsa.nassim2026_v8"
+    compileSdk 35                    // ← مطلوب لـ mobile_scanner 5.x
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17   // ← Java 17 إلزامي مع AGP 8
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    sourceSets {
+        main.java.srcDirs += 'src/main/kotlin'
+    }
+
+    defaultConfig {
+        applicationId "com.ihsa.nassim2026_v8"
+        minSdk 23                    // ← file_picker 8.x يحتاج 23
+        targetSdk 35
+        versionCode flutterVersionCode.toInteger()
+        versionName flutterVersionName
+        multiDexEnabled true
+    }
+
+    buildTypes {
+        debug {
+            applicationIdSuffix ".debug"
+            debuggable true
+        }
+        release {
+            minifyEnabled false      // ← false لتجنب مشاكل ProGuard مع SQLite
+            shrinkResources false
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    // ── تجاهل تعارضات الـ packaging ───────────────────────────────────────
+    packagingOptions {
+        resources {
+            excludes += [
+                'META-INF/DEPENDENCIES',
+                'META-INF/LICENSE',
+                'META-INF/LICENSE.txt',
+                'META-INF/NOTICE',
+                'META-INF/NOTICE.txt',
+            ]
+        }
+    }
+}
+
+flutter {
+    source '../..'
+}
+
+dependencies {
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:2.0.21"
+    implementation 'androidx.multidex:multidex:2.0.1'
+}
